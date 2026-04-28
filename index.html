@@ -5312,6 +5312,7 @@
     let sharedPendingRemotePayload = null;
     let sharedRemoteApplyTimer = 0;
     let sharedUserActiveUntil = 0;
+    let sharedLocalSaveTimer = 0;
 
     function getStoredShareCode() {
       try {
@@ -5372,6 +5373,25 @@
       const payload = sharedPendingRemotePayload;
       sharedPendingRemotePayload = null;
       applySharedSnapshot(payload);
+    }
+    function scheduleLocalSharedSnapshotSave() {
+      if (!sharedCurrentCode) return;
+      if (sharedSyncPaused) return;
+      if (sharedLocalSaveTimer) clearTimeout(sharedLocalSaveTimer);
+      sharedLocalSaveTimer = window.setTimeout(() => {
+        sharedLocalSaveTimer = 0;
+        if (!sharedCurrentCode) return;
+        if (isSharedUiBusy()) {
+          scheduleLocalSharedSnapshotSave();
+          return;
+        }
+        runWhenIdle(() => {
+          try {
+            const payload = captureAppSnapshot();
+            saveSharedSnapshotToLocal(sharedCurrentCode, payload);
+          } catch (_) {}
+        }, 2500);
+      }, 1200);
     }
     function scheduleApplySharedSnapshot(payload) {
       sharedPendingRemotePayload = payload;
@@ -5605,9 +5625,11 @@
       await firebase.auth().signInAnonymously();
       sharedSyncReady = true;
       document.addEventListener("input", () => {
+        scheduleLocalSharedSnapshotSave();
         scheduleSharedPush();
       }, true);
       document.addEventListener("change", () => {
+        scheduleLocalSharedSnapshotSave();
         scheduleSharedPush();
       }, true);
       document.addEventListener("pointerdown", markSharedUserInteraction, true);
@@ -5645,6 +5667,12 @@
           } catch (_) {}
         }, 1500);
       }
+      /* 端末内へは常に保存（Firestore未接続でも、次回即表示できるように） */
+      document.addEventListener("input", scheduleLocalSharedSnapshotSave, true);
+      document.addEventListener("change", scheduleLocalSharedSnapshotSave, true);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) scheduleLocalSharedSnapshotSave();
+      });
       await startSharedSyncIfNeeded();
       await connectSharedDocument();
     }
