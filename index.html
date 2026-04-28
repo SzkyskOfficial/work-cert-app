@@ -2878,11 +2878,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- 初回表示を速くするため、PDF/Firebase は必要時に遅延読み込み（JS内で動的ロード） -->
   <script>
     const LISTS_KEY = "work-cert-saved-items-v1";
     const SHARE_CODE_KEY = "work-cert-share-code-v1";
@@ -2895,6 +2891,34 @@
       projectId: "work-cert-app",
       appId: "1:19132439031:web:e403647a3c2455e9e976f2",
     };
+    const _scriptLoaders = new Map();
+    function loadScriptOnce(src) {
+      const u = String(src || "").trim();
+      if (!u) return Promise.reject(new Error("missing src"));
+      if (_scriptLoaders.has(u)) return _scriptLoaders.get(u);
+      const p = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = u;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("failed to load: " + u));
+        document.head.appendChild(s);
+      });
+      _scriptLoaders.set(u, p);
+      return p;
+    }
+    async function ensurePdfLibs() {
+      if (window.html2canvas && window.jspdf?.jsPDF) return;
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    }
+    async function ensureFirebaseLibs() {
+      if (window.firebase?.initializeApp && window.firebase?.auth && window.firebase?.firestore) return;
+      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
+      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+    }
+
     const wLeft = document.getElementById("wLeft");
     const wRight = document.getElementById("wRight");
     const taskRows = document.getElementById("taskRows");
@@ -4356,6 +4380,7 @@
     }
 
     async function createPdfFile() {
+      await ensurePdfLibs();
       closeFieldSheet();
       const paper = document.getElementById("paper");
       const useViewport = pdfUseViewportCapture();
@@ -4534,6 +4559,7 @@
     }
 
     document.getElementById("pdfBtn").onclick = async () => {
+      await ensurePdfLibs();
       const file = await createPdfFile();
       const url = URL.createObjectURL(file);
       const a = document.createElement("a");
@@ -4543,6 +4569,7 @@
       URL.revokeObjectURL(url);
     };
     document.getElementById("shareBtn").onclick = async () => {
+      await ensurePdfLibs();
       const file = await createPdfFile();
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "作業証明書" });
@@ -5425,6 +5452,7 @@
       void pushSharedSnapshot();
     }
     async function initSharedSync() {
+      await ensureFirebaseLibs();
       const btn = document.getElementById("shareCodeBtn");
       if (btn) {
         btn.onclick = () => {
@@ -5469,9 +5497,17 @@
     }
     initPaperFitScaleWatching();
     initAutoUpdateCheck();
-    void initSharedSync().catch((err) => {
-      console.warn("共有同期の初期化に失敗しました", err);
-    });
+    /* 初回表示を優先して、共有同期は少し遅らせて開始 */
+    const startShared = () => {
+      void initSharedSync().catch((err) => {
+        console.warn("共有同期の初期化に失敗しました", err);
+      });
+    };
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(startShared, { timeout: 2500 });
+    } else {
+      setTimeout(startShared, 1500);
+    }
   </script>
 </body>
 </html>
