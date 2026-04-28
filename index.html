@@ -4955,6 +4955,35 @@
       e.preventDefault();
       closeListsModal();
     });
+    /* iOS系で pointer/click の取りこぼしが出る端末向けに touchend も受ける */
+    listsModalCloseBtn?.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      closeListsModal();
+    }, { passive: false });
+    listsModalBackdrop?.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      closeListsModal();
+    }, { passive: false });
+    /*
+     * 最終保険: モーダル全体で委譲して閉じる。
+     * 再描画や端末差で個別リスナーが取りこぼしても、キャプチャ段階で確実に拾う。
+     */
+    listsModal?.addEventListener("click", (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.id === "listsModalClose" || t.classList.contains("lists-modal-backdrop")) {
+        e.preventDefault();
+        closeListsModal();
+      }
+    }, true);
+    listsModal?.addEventListener("touchend", (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.id === "listsModalClose" || t.classList.contains("lists-modal-backdrop")) {
+        e.preventDefault();
+        closeListsModal();
+      }
+    }, { capture: true, passive: false });
     const sigCanvas = document.getElementById("signatureCanvas");
     const sctx = sigCanvas.getContext("2d", { alpha: true });
     let drawing = false, lx = 0, ly = 0;
