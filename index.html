@@ -1606,14 +1606,17 @@
     /*
      * PDF(html2canvas): 枠線位置はそのまま。会社名・現場名・作業内容は縦中央。作業員氏名・早・残は字サイズは画面に合わせつつ PDF では行内で縦中央。
      */
-    body.pdf-render #paper .title-row {
+    body.pdf-render #paper .title-row,
+    body.screen-pdf-like #paper .title-row {
       overflow: visible !important;
     }
-    body.pdf-render #paper .w-row > div:nth-child(2) {
+    body.pdf-render #paper .w-row > div:nth-child(2),
+    body.screen-pdf-like #paper .w-row > div:nth-child(2) {
       align-items: stretch !important;
       justify-content: center !important;
     }
-    body.pdf-render #paper .w-row .name-wrap {
+    body.pdf-render #paper .w-row .name-wrap,
+    body.screen-pdf-like #paper .w-row .name-wrap {
       display: flex !important;
       flex-direction: column !important;
       align-items: stretch !important;
@@ -1624,7 +1627,8 @@
       min-height: 0 !important;
       height: 100% !important;
     }
-    body.pdf-render #paper .w-row .name-wrap .worker-name {
+    body.pdf-render #paper .w-row .name-wrap .worker-name,
+    body.screen-pdf-like #paper .w-row .name-wrap .worker-name {
       flex: 1 1 auto !important;
       align-self: stretch !important;
       width: 100% !important;
@@ -1655,6 +1659,7 @@
      * PDF 作業員早・残：ラッパーを行高いっぱいにし列内で縦中央。数字は flex＋padding（「ｈ」は ::after）
      */
     body.pdf-render #paper .w-ot-input-wrap,
+    body.screen-pdf-like #paper .w-ot-input-wrap,
     #paper[data-pdf-worker-col-lock="1"] .w-ot-input-wrap,
     #paper[data-pdf-worker-compress="1"] .w-ot-input-wrap {
       position: relative !important;
@@ -1671,6 +1676,7 @@
       overflow: visible !important;
     }
     body.pdf-render #paper .w-ot-input-wrap::after,
+    body.screen-pdf-like #paper .w-ot-input-wrap::after,
     #paper[data-pdf-worker-col-lock="1"] .w-ot-input-wrap::after,
     #paper[data-pdf-worker-compress="1"] .w-ot-input-wrap::after {
       content: "ｈ" !important;
@@ -1687,6 +1693,7 @@
     }
     /* PDF 作業員早・残：列ロック時の行高（--pdf-worker-row-h、未設定時は --worker-row-h）に連動 */
     body.pdf-render #paper .w-row .w-ot-cell .ot,
+    body.screen-pdf-like #paper .w-row .w-ot-cell .ot,
     #paper[data-pdf-worker-col-lock="1"] .w-row .w-ot-cell .ot,
     #paper[data-pdf-worker-compress="1"] .w-row .w-ot-cell .ot {
       position: relative !important;
