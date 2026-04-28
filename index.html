@@ -4313,14 +4313,14 @@
       if (!mq.matches) {
         inner.style.removeProperty("transform");
         inner.style.removeProperty("width");
+        inner.style.removeProperty("transform-origin");
         outer.style.removeProperty("height");
         outer.style.removeProperty("min-height");
         return;
       }
-      const pad = 24;
-      const cw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-      const pw = Math.max(1, paper.offsetWidth);
-      const s = Math.min(1, Math.max(0.28, (cw - pad) / pw));
+      const availW = Math.max(1, outer.clientWidth);
+      const pw = Math.max(1, paper.scrollWidth || paper.offsetWidth);
+      const s = Math.min(1, availW / pw);
       inner.style.width = pw + "px";
       inner.style.transform = "scale(" + s + ")";
       inner.style.transformOrigin = "top center";
