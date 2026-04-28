@@ -5404,7 +5404,23 @@
       lists.workTypes = Array.isArray(src.workTypes) ? src.workTypes : [];
       lists.workSectors = Array.isArray(src.workSectors) ? src.workSectors : [];
       lists.workDetails = Array.isArray(src.workDetails) ? src.workDetails : [];
-      loadLists();
+      lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+        pinToTop: COMPANY_PIN_TOP,
+        modalScriptOrder: true,
+      });
+      lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+      lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
+      lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
+      lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
+      migrateWorkersList();
+      persistWorkersSorted();
+      saveLists();
+      if (listsModal?.classList.contains("active")) renderListsModalBody();
+      if (fieldSheet?.classList.contains("active") && sheetTarget?.dataset?.listKey) {
+        const currentTarget = sheetTarget;
+        closeFieldSheet();
+        openFieldSheet(currentTarget, currentTarget.dataset.listKey);
+      }
     }
     function applySharedSnapshot(payload) {
       if (!payload || typeof payload !== "object") return;
