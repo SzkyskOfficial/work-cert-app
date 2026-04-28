@@ -3040,19 +3040,23 @@
       migrateWorkersList();
       persistWorkersSorted();
       saveLists();
-      void warmModalListSortYomiCacheForStrings(collectAllModalListStringsForYomi())
-        .then(() => {
-          lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
-            pinToTop: COMPANY_PIN_TOP,
-            modalScriptOrder: true,
-          });
-          lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
-          lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
-          lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
-          lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
-          saveLists();
-        })
-        .catch(() => {});
+      const warm = () => {
+        void warmModalListSortYomiCacheForStrings(collectAllModalListStringsForYomi())
+          .then(() => {
+            lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+              pinToTop: COMPANY_PIN_TOP,
+              modalScriptOrder: true,
+            });
+            lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+            lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
+            lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
+            lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
+            saveLists();
+          })
+          .catch(() => {});
+      };
+      if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 4000 });
+      else setTimeout(warm, 2500);
     }
     function saveLists() {
       try {
@@ -5637,9 +5641,14 @@
       document.fonts.ready.then(syncFooterColWidth).catch(() => {});
     }
     initPaperFitScaleWatching();
-    initAutoUpdateCheck();
-    applyScreenPdfLikeLayout();
-    window.addEventListener("resize", () => requestAnimationFrame(applyScreenPdfLikeLayout), { passive: true });
+    /* 初回表示を優先して、更新チェックとPDF寄せレイアウトは後で開始 */
+    const startPostInit = () => {
+      initAutoUpdateCheck();
+      applyScreenPdfLikeLayout();
+      window.addEventListener("resize", () => requestAnimationFrame(applyScreenPdfLikeLayout), { passive: true });
+    };
+    if ("requestIdleCallback" in window) window.requestIdleCallback(startPostInit, { timeout: 2500 });
+    else setTimeout(startPostInit, 1500);
     /* 初回表示を優先して、共有同期はアイドル時に開始（保存済みコードがある端末のみ） */
     const startShared = () => {
       void initSharedSync().catch((err) => {
