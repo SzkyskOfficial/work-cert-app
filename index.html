@@ -54,6 +54,13 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
     }
+
+    /* スマホ: 外側余白を消して「用紙(980px)」だけを縮小表示しやすくする（中の用紙レイアウトはPCと同一） */
+    @media (max-width: 900px) {
+      .app { padding: 0; }
+      .toolbar { margin: 0; padding: 8px 10px; }
+      .paper-wrap { padding: 0; }
+    }
     /* 狭い画面：用紙 DOM は PC と同一。見た目だけ等比縮小（レイアウト数値は変えない） */
     .paper-scale-outer {
       width: 100%;
