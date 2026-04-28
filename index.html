@@ -1925,10 +1925,12 @@
       pointer-events: none !important;
       color: #222 !important;
     }
-    body.pdf-render #paper .t-row > div.task-main-cell {
+    body.pdf-render #paper .t-row > div.task-main-cell,
+    body.screen-pdf-like #paper .t-row > div.task-main-cell {
       align-items: stretch !important;
     }
-    body.pdf-render #paper .t-row .task-dual {
+    body.pdf-render #paper .t-row .task-dual,
+    body.screen-pdf-like #paper .t-row .task-dual {
       align-self: stretch !important;
       flex: 1 1 auto !important;
       height: 100% !important;
@@ -1937,7 +1939,10 @@
     }
     body.pdf-render #paper .t-row .task-dual input.task-type,
     body.pdf-render #paper .t-row .task-dual input.task-sector,
-    body.pdf-render #paper .t-row .task-dual input.task-detail {
+    body.pdf-render #paper .t-row .task-dual input.task-detail,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-type,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-sector,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-detail {
       align-self: center !important;
       min-height: 0 !important;
       height: auto !important;
@@ -1949,13 +1954,17 @@
       font-size: clamp(15px, calc(var(--task-row-h) * 0.28), 20px) !important;
     }
     body.pdf-render #paper .t-row .task-dual input.task-type,
-    body.pdf-render #paper .t-row .task-dual input.task-sector {
+    body.pdf-render #paper .t-row .task-dual input.task-sector,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-type,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-sector {
       text-align: center !important;
     }
-    body.pdf-render #paper .t-row .task-dual input.task-detail {
+    body.pdf-render #paper .t-row .task-dual input.task-detail,
+    body.screen-pdf-like #paper .t-row .task-dual input.task-detail {
       text-align: left !important;
     }
-    body.pdf-render #paper .t-row > div.num.task-cell-unit input {
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input,
+    body.screen-pdf-like #paper .t-row > div.num.task-cell-unit input {
       overflow: visible !important;
       flex: 1 1 auto !important;
       min-height: 0 !important;
@@ -1968,10 +1977,12 @@
       text-align: center !important;
       line-height: normal !important;
     }
-    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-man {
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-man,
+    body.screen-pdf-like #paper .t-row > div.num.task-cell-unit input.task-man {
       padding-right: 26px !important;
     }
-    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-hours {
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-hours,
+    body.screen-pdf-like #paper .t-row > div.num.task-cell-unit input.task-hours {
       padding-right: 16px !important;
     }
     /* 作業内容6行以上（PDF）: #taskRows 固定高＋均等行。合計は常に 6×ref（作業段数では ref を変えず、行数だけ均等割り） */
