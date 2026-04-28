@@ -2,7 +2,7 @@
 <html lang="ja" data-rev="rebuild-layout-v3">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta id="viewportMeta" name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>作業証明書アプリ (rebuild-layout-v3)</title>
   <style>
     :root {
@@ -52,10 +52,6 @@
       overflow-x: hidden;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-    }
-    /* iOS Safari では transform 縮小を使わないので横スクロールを許可 */
-    @supports (-webkit-touch-callout: none) {
-      .paper-wrap { overflow-x: auto; }
     }
     /* 狭い画面：用紙 DOM は PC と同一。見た目だけ等比縮小（レイアウト数値は変えない） */
     .paper-scale-outer {
@@ -4361,7 +4357,7 @@
       const inner = document.querySelector(".paper-scale-inner");
       if (!paper || !outer || !inner) return;
       if (document.body.classList.contains("pdf-render")) return;
-      /* iOS Safari は transform 配下の入力がタップ不能になることがあるため縮小しない（操作優先） */
+      /* iOS Safari は transform 縮小でタップ不能になり得るため、viewport-fit（applyIosSafariViewportFit）側に寄せる */
       const ua = navigator.userAgent || "";
       const isIOS = /iP(hone|ad|od)/.test(ua);
       const isSafari = /Safari\//.test(ua) && !/CriOS\//.test(ua) && !/FxiOS\//.test(ua);
@@ -4391,6 +4387,19 @@
       window.addEventListener("resize", schedule, { passive: true });
       window.addEventListener("orientationchange", schedule, { passive: true });
       requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
+    }
+
+    /** iPhone Safari: transform 縮小はタップ不能になり得るため、viewport 幅を用紙幅にしてブラウザ側で縮小させる */
+    function applyIosSafariViewportFit() {
+      const meta = document.getElementById("viewportMeta");
+      if (!meta) return;
+      const ua = navigator.userAgent || "";
+      const isIOS = /iP(hone|ad|od)/.test(ua);
+      const isSafari = /Safari\//.test(ua) && !/CriOS\//.test(ua) && !/FxiOS\//.test(ua);
+      if (!isIOS || !isSafari) return;
+      const paper = document.getElementById("paper");
+      const w = paper ? Math.round(paper.scrollWidth || paper.offsetWidth || 980) : 980;
+      meta.setAttribute("content", `width=${w}, initial-scale=1, viewport-fit=cover`);
     }
 
     async function createPdfFile() {
@@ -5511,6 +5520,7 @@
     }
     initPaperFitScaleWatching();
     initAutoUpdateCheck();
+    applyIosSafariViewportFit();
     /* 初回表示を優先して、共有同期は少し遅らせて開始 */
     const startShared = () => {
       void initSharedSync().catch((err) => {
