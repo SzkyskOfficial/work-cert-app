@@ -5313,6 +5313,7 @@
     let sharedRemoteApplyTimer = 0;
     let sharedUserActiveUntil = 0;
     let sharedLocalSaveTimer = 0;
+    let sharedConnectTimer = 0;
 
     function getStoredShareCode() {
       try {
@@ -5405,6 +5406,31 @@
         }
         flushPendingSharedSnapshot();
       }, waitMs);
+    }
+    function isPhoneLikeScreen() {
+      return window.matchMedia("(max-width: 900px)").matches;
+    }
+    function scheduleSharedConnect(delayMs = 0) {
+      if (!sharedCurrentCode) return;
+      if (sharedSyncReady && sharedDocRef) return;
+      if (sharedConnectTimer) clearTimeout(sharedConnectTimer);
+      sharedConnectTimer = window.setTimeout(() => {
+        sharedConnectTimer = 0;
+        if (isSharedUiBusy()) {
+          scheduleSharedConnect(3000);
+          return;
+        }
+        runWhenIdle(() => {
+          void (async () => {
+            try {
+              await startSharedSyncIfNeeded();
+              await connectSharedDocument();
+            } catch (err) {
+              console.warn("共有接続に失敗しました", err);
+            }
+          })();
+        }, 6000);
+      }, delayMs);
     }
     async function promptAndSetShareCode() {
       const current = sharedCurrentCode || getStoredShareCode();
@@ -5651,8 +5677,11 @@
           void (async () => {
             const ok = await promptAndSetShareCode();
             if (!ok) return;
-            await startSharedSyncIfNeeded();
-            await connectSharedDocument();
+            if (isPhoneLikeScreen()) scheduleSharedConnect(8000);
+            else {
+              await startSharedSyncIfNeeded();
+              await connectSharedDocument();
+            }
           })();
         };
       }
@@ -5672,7 +5701,14 @@
       document.addEventListener("change", scheduleLocalSharedSnapshotSave, true);
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) scheduleLocalSharedSnapshotSave();
+        else if (sharedCurrentCode && (!sharedSyncReady || !sharedDocRef)) {
+          scheduleSharedConnect(isPhoneLikeScreen() ? 4000 : 1000);
+        }
       });
+      if (isPhoneLikeScreen()) {
+        scheduleSharedConnect(12000);
+        return;
+      }
       await startSharedSyncIfNeeded();
       await connectSharedDocument();
     }
