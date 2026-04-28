@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ja" data-rev="rebuild-layout-v2">
+<html lang="ja" data-rev="rebuild-layout-v3">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>作業証明書アプリ (rebuild-layout-v2)</title>
+  <title>作業証明書アプリ (rebuild-layout-v3)</title>
   <style>
     :root {
       --paper-w: 980px;
@@ -2435,6 +2435,7 @@
       flex-direction: column;
       overflow: hidden;
       pointer-events: auto;
+      touch-action: manipulation;
     }
     .lists-modal-head {
       display: flex;
@@ -2556,7 +2557,7 @@
       min-width: 160px;
       font-family: inherit;
       /* iOS Safari: 16px 未満だとフォーカス時に画面拡大される */
-      font-size: 16px;
+      font-size: 16px !important;
       padding: 8px 10px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
@@ -2648,6 +2649,7 @@
     <div class="toolbar">
       <button id="pdfBtn">PDF作成</button>
       <button id="shareBtn">PCへ送信（共有）</button>
+      <button id="shareCodeBtn" type="button">共有コード</button>
       <button type="button" data-lists-tab="companies">会社名</button>
       <button type="button" data-lists-tab="sites">現場名</button>
       <button type="button" data-lists-tab="workers">作業員</button>
@@ -2878,11 +2880,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script>
     const LISTS_KEY = "work-cert-saved-items-v1";
+    const SHARE_CODE_KEY = "work-cert-share-code-v1";
     const lists = { companies: [], sites: [], workers: [], workTypes: [], workSectors: [], workDetails: [] };
     const DEFAULT_GRID_ROWS = { workerCount: 12, taskCount: 6, remarkCount: 5 };
     const state = { ...DEFAULT_GRID_ROWS, signatureData: "", shift: "day" };
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyBet0jZMFbYIjgQTIt9CIb-a55DgvbDpIc",
+      authDomain: "work-cert-app.firebaseapp.com",
+      projectId: "work-cert-app",
+      appId: "1:19132439031:web:e403647a3c2455e9e976f2",
+    };
     const wLeft = document.getElementById("wLeft");
     const wRight = document.getElementById("wRight");
     const taskRows = document.getElementById("taskRows");
@@ -2988,6 +3000,7 @@
       try {
         localStorage.setItem(LISTS_KEY, JSON.stringify(lists));
       } catch (_) {}
+      scheduleSharedPush();
     }
 
     /** ページ読込のたび：作業員12・作業内容6・備考5（追加した行数は保存しない） */
@@ -4073,16 +4086,18 @@
       state.shift = "day";
       document.getElementById("shiftDay").classList.add("active");
       document.getElementById("shiftNight").classList.remove("active");
+      scheduleSharedPush();
     };
     document.getElementById("shiftNight").onclick = () => {
       state.shift = "night";
       document.getElementById("shiftNight").classList.add("active");
       document.getElementById("shiftDay").classList.remove("active");
+      scheduleSharedPush();
     };
 
-    document.getElementById("addWorkerBtn").onclick = () => { state.workerCount += 2; adjustDensity(); buildWorkers(); };
-    document.getElementById("addTaskBtn").onclick = () => { state.taskCount += 1; adjustDensity(); buildTasks(); };
-    document.getElementById("addRemarkBtn").onclick = () => { state.remarkCount += 1; adjustDensity(); buildRemarks(); };
+    document.getElementById("addWorkerBtn").onclick = () => { state.workerCount += 2; adjustDensity(); buildWorkers(); scheduleSharedPush(); };
+    document.getElementById("addTaskBtn").onclick = () => { state.taskCount += 1; adjustDensity(); buildTasks(); scheduleSharedPush(); };
+    document.getElementById("addRemarkBtn").onclick = () => { state.remarkCount += 1; adjustDensity(); buildRemarks(); scheduleSharedPush(); };
 
     function refreshWeekday() {
       const yEl = document.getElementById("year");
@@ -4311,18 +4326,32 @@
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, yTop, drawW, drawH, undefined, "FAST");
     }
 
-    /** PC と同じ操作系に統一するため、スマホ専用の transform 縮小は無効化 */
+    /** スマホ画面のみ: 見た目を等比縮小（操作系は既存のPCと同じイベント経路のまま） */
     function applyPaperFitScale() {
       const paper = document.getElementById("paper");
       const outer = document.querySelector(".paper-scale-outer");
       const inner = document.querySelector(".paper-scale-inner");
       if (!paper || !outer || !inner) return;
-      inner.style.removeProperty("transform");
-      inner.style.removeProperty("width");
-      inner.style.removeProperty("transform-origin");
+      if (document.body.classList.contains("pdf-render")) return;
+      const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
+      if (!isPhoneLike) {
+        inner.style.removeProperty("transform");
+        inner.style.removeProperty("width");
+        inner.style.removeProperty("transform-origin");
+        return;
+      }
+      const availW = Math.max(1, outer.clientWidth);
+      const pw = Math.max(1, paper.scrollWidth || paper.offsetWidth);
+      const s = Math.min(1, availW / pw);
+      inner.style.width = pw + "px";
+      inner.style.transform = "scale(" + s + ")";
+      inner.style.transformOrigin = "top center";
     }
 
     function initPaperFitScaleWatching() {
+      const schedule = () => requestAnimationFrame(applyPaperFitScale);
+      window.addEventListener("resize", schedule, { passive: true });
+      window.addEventListener("orientationchange", schedule, { passive: true });
       requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
     }
 
@@ -5066,6 +5095,7 @@
       refreshSignSlotClass();
       sigModal.classList.remove("active");
       closeFieldSheet();
+      scheduleSharedPush();
     };
     sigCanvas.addEventListener("mousedown", start); sigCanvas.addEventListener("mousemove", move); window.addEventListener("mouseup", end);
     sigCanvas.addEventListener("touchstart", start, { passive: false }); sigCanvas.addEventListener("touchmove", move, { passive: false }); sigCanvas.addEventListener("touchend", end);
@@ -5182,6 +5212,243 @@
       }, 2500);
     }
 
+    let sharedSyncReady = false;
+    let sharedSyncPaused = false;
+    let sharedSyncTimer = 0;
+    let sharedCurrentCode = "";
+    let sharedDocRef = null;
+    let sharedUnsub = null;
+    let sharedLastAppliedJson = "";
+    let sharedLastPushedJson = "";
+
+    function getStoredShareCode() {
+      try {
+        return String(localStorage.getItem(SHARE_CODE_KEY) || "").trim();
+      } catch (_) {
+        return "";
+      }
+    }
+    function setStoredShareCode(code) {
+      try {
+        if (code) localStorage.setItem(SHARE_CODE_KEY, code);
+        else localStorage.removeItem(SHARE_CODE_KEY);
+      } catch (_) {}
+    }
+    function normalizeShareCode(raw) {
+      return String(raw || "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^0-9A-Za-z_-]/g, "")
+        .slice(0, 40);
+    }
+    function updateShareCodeButton() {
+      const btn = document.getElementById("shareCodeBtn");
+      if (!btn) return;
+      btn.textContent = sharedCurrentCode ? `共有コード:${sharedCurrentCode}` : "共有コード";
+      btn.title = sharedCurrentCode ? `共有コード: ${sharedCurrentCode}` : "共有コードを設定";
+    }
+    async function promptAndSetShareCode() {
+      const current = sharedCurrentCode || getStoredShareCode();
+      const raw = window.prompt("共有コードを入力してください（同じコード同士で同期します）", current || "default");
+      if (raw == null) return false;
+      const code = normalizeShareCode(raw);
+      if (!code) {
+        alert("共有コードを入力してください。");
+        return false;
+      }
+      if (code === sharedCurrentCode) return true;
+      sharedCurrentCode = code;
+      setStoredShareCode(code);
+      updateShareCodeButton();
+      if (sharedUnsub) {
+        sharedUnsub();
+        sharedUnsub = null;
+      }
+      sharedDocRef = null;
+      sharedLastAppliedJson = "";
+      sharedLastPushedJson = "";
+      if (sharedSyncReady) await connectSharedDocument();
+      return true;
+    }
+    function captureAppSnapshot() {
+      return {
+        lists: JSON.parse(JSON.stringify(lists)),
+        state: {
+          workerCount: state.workerCount,
+          taskCount: state.taskCount,
+          remarkCount: state.remarkCount,
+          signatureData: state.signatureData || "",
+          shift: state.shift || "day",
+        },
+        header: {
+          year: document.getElementById("year")?.value || "",
+          month: document.getElementById("month")?.value || "",
+          day: document.getElementById("day")?.value || "",
+          companyName: document.getElementById("companyName")?.value || "",
+          siteName: document.getElementById("siteName")?.value || "",
+        },
+        workers: [...document.querySelectorAll("#wLeft .w-row, #wRight .w-row")].map((row) => ({
+          name: row.querySelector(".worker-name")?.value || "",
+          ot: row.querySelector(".worker-ot")?.value || "",
+        })),
+        tasks: [...document.querySelectorAll("#taskRows .t-row")].map((row) => {
+          let contractIndex = 0;
+          row.querySelectorAll(".circled").forEach((el, idx) => {
+            if (el.classList.contains("active")) contractIndex = idx;
+          });
+          return {
+            taskType: row.querySelector(".task-type")?.value || "",
+            taskSector: row.querySelector(".task-sector")?.value || "",
+            taskDetail: row.querySelector(".task-detail")?.value || "",
+            taskMan: row.querySelector(".task-man")?.value || "",
+            taskHours: row.querySelector(".task-hours")?.value || "",
+            contractIndex,
+          };
+        }),
+        remarks: [...document.querySelectorAll("#remarkRows textarea")].map((t) => t.value || ""),
+      };
+    }
+    function applySharedLists(nextLists) {
+      const src = nextLists && typeof nextLists === "object" ? nextLists : {};
+      lists.companies = Array.isArray(src.companies) ? src.companies : [];
+      lists.sites = Array.isArray(src.sites) ? src.sites : [];
+      lists.workers = Array.isArray(src.workers) ? src.workers : [];
+      lists.workTypes = Array.isArray(src.workTypes) ? src.workTypes : [];
+      lists.workSectors = Array.isArray(src.workSectors) ? src.workSectors : [];
+      lists.workDetails = Array.isArray(src.workDetails) ? src.workDetails : [];
+      loadLists();
+    }
+    function applySharedSnapshot(payload) {
+      if (!payload || typeof payload !== "object") return;
+      sharedSyncPaused = true;
+      try {
+        applySharedLists(payload.lists);
+        const nextState = payload.state || {};
+        state.workerCount = Number(nextState.workerCount) || DEFAULT_GRID_ROWS.workerCount;
+        state.taskCount = Number(nextState.taskCount) || DEFAULT_GRID_ROWS.taskCount;
+        state.remarkCount = Number(nextState.remarkCount) || DEFAULT_GRID_ROWS.remarkCount;
+        state.signatureData = String(nextState.signatureData || "");
+        state.shift = nextState.shift === "night" ? "night" : "day";
+        adjustDensity();
+        buildWorkers();
+        buildTasks();
+        buildRemarks();
+        const header = payload.header || {};
+        document.getElementById("year").value = String(header.year || "");
+        document.getElementById("month").value = String(header.month || "");
+        document.getElementById("day").value = String(header.day || "");
+        document.getElementById("companyName").value = String(header.companyName || "");
+        document.getElementById("siteName").value = String(header.siteName || "");
+        const workerRows = [...document.querySelectorAll("#wLeft .w-row, #wRight .w-row")];
+        workerRows.forEach((row, idx) => {
+          const item = payload.workers?.[idx] || {};
+          const nameEl = row.querySelector(".worker-name");
+          const otEl = row.querySelector(".worker-ot");
+          if (nameEl) nameEl.value = String(item.name || "");
+          if (otEl) otEl.value = String(item.ot || "");
+        });
+        [...document.querySelectorAll("#taskRows .t-row")].forEach((row, idx) => {
+          const item = payload.tasks?.[idx] || {};
+          const setv = (sel, val) => {
+            const el = row.querySelector(sel);
+            if (el) el.value = String(val || "");
+          };
+          setv(".task-type", item.taskType);
+          setv(".task-sector", item.taskSector);
+          setv(".task-detail", item.taskDetail);
+          setv(".task-man", item.taskMan);
+          setv(".task-hours", item.taskHours);
+          row.querySelectorAll(".circled").forEach((el, circIdx) => {
+            el.classList.toggle("active", circIdx === Number(item.contractIndex || 0));
+          });
+          syncTaskContractMarkForRow(row);
+        });
+        [...document.querySelectorAll("#remarkRows textarea")].forEach((el, idx) => {
+          el.value = String(payload.remarks?.[idx] || "");
+        });
+        document.getElementById("shiftDay").classList.toggle("active", state.shift === "day");
+        document.getElementById("shiftNight").classList.toggle("active", state.shift === "night");
+        document.getElementById("signImage").src = state.signatureData || "";
+        refreshSignSlotClass();
+        refreshWeekday();
+        refreshTotals();
+      } finally {
+        sharedSyncPaused = false;
+      }
+    }
+    function scheduleSharedPush() {
+      if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef) return;
+      if (sharedSyncTimer) clearTimeout(sharedSyncTimer);
+      sharedSyncTimer = window.setTimeout(() => {
+        sharedSyncTimer = 0;
+        void pushSharedSnapshot();
+      }, 500);
+    }
+    async function pushSharedSnapshot() {
+      if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef) return;
+      const payload = captureAppSnapshot();
+      const json = JSON.stringify(payload);
+      if (json === sharedLastPushedJson) return;
+      sharedLastPushedJson = json;
+      try {
+        await sharedDocRef.set({
+          code: sharedCurrentCode,
+          payload,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } catch (err) {
+        console.warn("共有保存に失敗しました", err);
+      }
+    }
+    async function connectSharedDocument() {
+      if (!sharedSyncReady || !sharedCurrentCode) return;
+      const db = firebase.firestore();
+      sharedDocRef = db.collection("sharedDocs").doc(sharedCurrentCode);
+      sharedUnsub = sharedDocRef.onSnapshot((snap) => {
+        const data = snap.data();
+        const payload = data?.payload;
+        if (!payload) {
+          void pushSharedSnapshot();
+          return;
+        }
+        const json = JSON.stringify(payload);
+        if (json === sharedLastAppliedJson) return;
+        if (json === JSON.stringify(captureAppSnapshot())) {
+          sharedLastAppliedJson = json;
+          return;
+        }
+        sharedLastAppliedJson = json;
+        applySharedSnapshot(payload);
+      }, (err) => {
+        console.warn("共有受信に失敗しました", err);
+      });
+      void pushSharedSnapshot();
+    }
+    async function initSharedSync() {
+      const btn = document.getElementById("shareCodeBtn");
+      if (btn) {
+        btn.onclick = () => {
+          void promptAndSetShareCode();
+        };
+      }
+      sharedCurrentCode = normalizeShareCode(getStoredShareCode());
+      updateShareCodeButton();
+      if (!sharedCurrentCode) {
+        const ok = await promptAndSetShareCode();
+        if (!ok) return;
+      }
+      firebase.initializeApp(FIREBASE_CONFIG);
+      await firebase.auth().signInAnonymously();
+      sharedSyncReady = true;
+      await connectSharedDocument();
+      document.addEventListener("input", () => {
+        scheduleSharedPush();
+      }, true);
+      document.addEventListener("change", () => {
+        scheduleSharedPush();
+      }, true);
+    }
+
     setTodayToDateInputs();
     loadLists();
     resetGridRowsToDefault();
@@ -5202,6 +5469,9 @@
     }
     initPaperFitScaleWatching();
     initAutoUpdateCheck();
+    void initSharedSync().catch((err) => {
+      console.warn("共有同期の初期化に失敗しました", err);
+    });
   </script>
 </body>
 </html>
