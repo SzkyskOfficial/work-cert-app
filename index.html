@@ -5308,6 +5308,9 @@
     let sharedUnsub = null;
     let sharedLastAppliedJson = "";
     let sharedLastPushedJson = "";
+    let sharedPendingRemotePayload = null;
+    let sharedRemoteApplyTimer = 0;
+    let sharedUserActiveUntil = 0;
 
     function getStoredShareCode() {
       try {
@@ -5334,6 +5337,36 @@
       if (!btn) return;
       btn.textContent = sharedCurrentCode ? `共有コード:${sharedCurrentCode}` : "共有コード";
       btn.title = sharedCurrentCode ? `共有コード: ${sharedCurrentCode}` : "共有コードを設定";
+    }
+    function markSharedUserInteraction() {
+      sharedUserActiveUntil = Date.now() + 1800;
+    }
+    function isSharedUiBusy() {
+      return Boolean(
+        Date.now() < sharedUserActiveUntil ||
+        fieldSheet?.classList.contains("active") ||
+        listsModal?.classList.contains("active") ||
+        sigModal?.classList.contains("active")
+      );
+    }
+    function flushPendingSharedSnapshot() {
+      if (!sharedPendingRemotePayload || isSharedUiBusy()) return;
+      const payload = sharedPendingRemotePayload;
+      sharedPendingRemotePayload = null;
+      applySharedSnapshot(payload);
+    }
+    function scheduleApplySharedSnapshot(payload) {
+      sharedPendingRemotePayload = payload;
+      if (sharedRemoteApplyTimer) clearTimeout(sharedRemoteApplyTimer);
+      const waitMs = isSharedUiBusy() ? 1200 : 180;
+      sharedRemoteApplyTimer = window.setTimeout(() => {
+        sharedRemoteApplyTimer = 0;
+        if (isSharedUiBusy()) {
+          scheduleApplySharedSnapshot(sharedPendingRemotePayload);
+          return;
+        }
+        flushPendingSharedSnapshot();
+      }, waitMs);
     }
     async function promptAndSetShareCode() {
       const current = sharedCurrentCode || getStoredShareCode();
@@ -5531,7 +5564,7 @@
           return;
         }
         sharedLastAppliedJson = json;
-        applySharedSnapshot(payload);
+        scheduleApplySharedSnapshot(payload);
       }, (err) => {
         console.warn("共有受信に失敗しました", err);
       });
@@ -5549,6 +5582,9 @@
       document.addEventListener("change", () => {
         scheduleSharedPush();
       }, true);
+      document.addEventListener("pointerdown", markSharedUserInteraction, true);
+      document.addEventListener("touchstart", markSharedUserInteraction, true);
+      document.addEventListener("focusin", markSharedUserInteraction, true);
     }
 
     /**
