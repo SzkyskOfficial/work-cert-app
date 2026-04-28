@@ -53,6 +53,10 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
     }
+    /* iOS Safari では transform 縮小を使わないので横スクロールを許可 */
+    @supports (-webkit-touch-callout: none) {
+      .paper-wrap { overflow-x: auto; }
+    }
     /* 狭い画面：用紙 DOM は PC と同一。見た目だけ等比縮小（レイアウト数値は変えない） */
     .paper-scale-outer {
       width: 100%;
@@ -4357,6 +4361,16 @@
       const inner = document.querySelector(".paper-scale-inner");
       if (!paper || !outer || !inner) return;
       if (document.body.classList.contains("pdf-render")) return;
+      /* iOS Safari は transform 配下の入力がタップ不能になることがあるため縮小しない（操作優先） */
+      const ua = navigator.userAgent || "";
+      const isIOS = /iP(hone|ad|od)/.test(ua);
+      const isSafari = /Safari\//.test(ua) && !/CriOS\//.test(ua) && !/FxiOS\//.test(ua);
+      if (isIOS && isSafari) {
+        inner.style.removeProperty("transform");
+        inner.style.removeProperty("width");
+        inner.style.removeProperty("transform-origin");
+        return;
+      }
       const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
       if (!isPhoneLike) {
         inner.style.removeProperty("transform");
