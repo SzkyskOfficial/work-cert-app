@@ -2,7 +2,7 @@
 <html lang="ja" data-rev="rebuild-layout-v3">
 <head>
   <meta charset="UTF-8" />
-  <meta id="viewportMeta" name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
   <title>作業証明書アプリ (rebuild-layout-v3)</title>
   <style>
     :root {
@@ -54,12 +54,7 @@
       -webkit-overflow-scrolling: touch;
     }
 
-    /* スマホ: 外側余白を消して「用紙(980px)」だけを縮小表示しやすくする（中の用紙レイアウトはPCと同一） */
-    @media (max-width: 900px) {
-      .app { padding: 0; }
-      .toolbar { margin: 0; padding: 8px 10px; }
-      .paper-wrap { padding: 0; }
-    }
+    /* URL画面はPC画面と同一レイアウト。スマホでは viewport 幅固定でブラウザ側に縮小させる */
     /* 狭い画面：用紙 DOM は PC と同一。見た目だけ等比縮小（レイアウト数値は変えない） */
     .paper-scale-outer {
       width: 100%;
@@ -4407,124 +4402,39 @@
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, yTop, drawW, drawH, undefined, "FAST");
     }
 
-    /** スマホ画面のみ: 見た目を等比縮小（操作系は既存のPCと同じイベント経路のまま） */
+    /** URL画面はPC画面と同一。追加のスマホ専用縮小変換は使わない。 */
     function applyPaperFitScale() {
-      const paper = document.getElementById("paper");
-      const outer = document.querySelector(".paper-scale-outer");
       const inner = document.querySelector(".paper-scale-inner");
-      if (!paper || !outer || !inner) return;
-      if (document.body.classList.contains("pdf-render")) return;
-      const ua = navigator.userAgent || "";
-      const isIOS = /iP(hone|ad|od)/.test(ua);
-      const isSafari = /Safari\//.test(ua) && !/CriOS\//.test(ua) && !/FxiOS\//.test(ua);
-      const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
-      if (!isPhoneLike) {
-        inner.style.removeProperty("transform");
-        inner.style.removeProperty("zoom");
-        inner.style.removeProperty("width");
-        inner.style.removeProperty("transform-origin");
-        return;
-      }
-      const availW = Math.max(1, outer.clientWidth);
-      const pw = Math.max(1, paper.scrollWidth || paper.offsetWidth);
-      const s = Math.min(1, availW / pw);
-      inner.style.width = pw + "px";
-      if (isIOS && isSafari) {
-        /* iOS Safari: transform 下の入力がタップ不能になり得るため zoom を使う */
-        inner.style.removeProperty("transform");
-        inner.style.removeProperty("transform-origin");
-        inner.style.zoom = String(s);
-      } else {
-        inner.style.removeProperty("zoom");
-        inner.style.transform = "scale(" + s + ")";
-        inner.style.transformOrigin = "top center";
-      }
+      if (!inner) return;
+      inner.style.removeProperty("transform");
+      inner.style.removeProperty("zoom");
+      inner.style.removeProperty("width");
+      inner.style.removeProperty("transform-origin");
     }
 
     function initPaperFitScaleWatching() {
-      const schedule = () => requestAnimationFrame(applyPaperFitScale);
-      window.addEventListener("resize", schedule, { passive: true });
-      window.addEventListener("orientationchange", schedule, { passive: true });
       requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
     }
 
     function applyScreenPdfLikeLayout() {
       const paper = document.getElementById("paper");
       if (!paper) return;
-      const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
-      document.body.classList.toggle("screen-pdf-like", isPhoneLike);
-      if (!isPhoneLike) {
-        paper.style.removeProperty("--pdf-worker-row-h");
-        paper.style.removeProperty("--pdf-workers-col-data-h");
-        paper.style.removeProperty("--pdf-worker-rows-per-half");
-        paper.removeAttribute("data-pdf-worker-col-lock");
-        paper.removeAttribute("data-pdf-worker-compress");
-        paper.style.removeProperty("--pdf-tasks-col-data-h");
-        paper.style.removeProperty("--pdf-task-rows-count");
-        paper.style.removeProperty("--pdf-task-row-h");
-        paper.removeAttribute("data-pdf-task-col-lock");
-        paper.removeAttribute("data-pdf-task-num-dense");
-        paper.style.removeProperty("--pdf-remarks-col-data-h");
-        paper.style.removeProperty("--pdf-remark-rows-count");
-        paper.removeAttribute("data-pdf-remark-col-lock");
-        paper.removeAttribute("data-pdf-remark-dense");
-        paper.removeAttribute("data-pdf-remark-xdense");
-        return;
-      }
-      /* PDFと同じ列ロック条件を画面にも適用 */
-      if (state.workerCount >= 12 && state.workerCount % 2 === 0) {
-        const refPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
-        const rowsPerHalf = state.workerCount / 2;
-        const colDataPx = 6 * refPx;
-        const eachPx = colDataPx / rowsPerHalf;
-        paper.style.setProperty("--pdf-workers-col-data-h", `${colDataPx}px`);
-        paper.style.setProperty("--pdf-worker-rows-per-half", String(rowsPerHalf));
-        paper.style.setProperty("--pdf-worker-row-h", `${eachPx}px`);
-        paper.setAttribute("data-pdf-worker-col-lock", "1");
-        if (state.workerCount > 12) paper.setAttribute("data-pdf-worker-compress", "1");
-      } else {
-        paper.style.removeProperty("--pdf-worker-row-h");
-        paper.style.removeProperty("--pdf-workers-col-data-h");
-        paper.style.removeProperty("--pdf-worker-rows-per-half");
-        paper.removeAttribute("data-pdf-worker-col-lock");
-        paper.removeAttribute("data-pdf-worker-compress");
-      }
-      if (state.taskCount >= 6) {
-        const taskColDataPx = pdfTaskColLockTotalDataHeightPx(state.taskCount, state.remarkCount);
-        const eachTaskPx = pdfTaskColLockEachRowPx(state.taskCount, state.remarkCount);
-        paper.style.setProperty("--pdf-tasks-col-data-h", `${taskColDataPx}px`);
-        paper.style.setProperty("--pdf-task-rows-count", String(state.taskCount));
-        paper.style.setProperty("--pdf-task-row-h", `${eachTaskPx}px`);
-        paper.setAttribute("data-pdf-task-col-lock", "1");
-        if (state.taskCount >= 11) paper.setAttribute("data-pdf-task-num-dense", "1");
-        else paper.removeAttribute("data-pdf-task-num-dense");
-      } else {
-        paper.style.removeProperty("--pdf-tasks-col-data-h");
-        paper.style.removeProperty("--pdf-task-rows-count");
-        paper.style.removeProperty("--pdf-task-row-h");
-        paper.removeAttribute("data-pdf-task-col-lock");
-        paper.removeAttribute("data-pdf-task-num-dense");
-      }
-      if (state.remarkCount >= 5) {
-        const remarkRefPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
-        const remarkColBasePx =
-          PDF_REMARK_COL_LOCK_BASE_ROWS * remarkRefPx +
-          PDF_REMARK_COL_LOCK_BASE_ROWS * PDF_REMARK_COL_LOCK_PER_ROW_BUMP_PX;
-        const remarkColDataPx = Math.round(remarkColBasePx * PDF_REMARK_LOCK_HEIGHT_SCALE_WHEN_5_ROWS);
-        paper.style.setProperty("--pdf-remarks-col-data-h", `${remarkColDataPx}px`);
-        paper.style.setProperty("--pdf-remark-rows-count", String(state.remarkCount));
-        paper.setAttribute("data-pdf-remark-col-lock", "1");
-        if (state.remarkCount >= 10) paper.setAttribute("data-pdf-remark-dense", "1");
-        else paper.removeAttribute("data-pdf-remark-dense");
-        if (state.remarkCount >= 12) paper.setAttribute("data-pdf-remark-xdense", "1");
-        else paper.removeAttribute("data-pdf-remark-xdense");
-      } else {
-        paper.style.removeProperty("--pdf-remarks-col-data-h");
-        paper.style.removeProperty("--pdf-remark-rows-count");
-        paper.removeAttribute("data-pdf-remark-col-lock");
-        paper.removeAttribute("data-pdf-remark-dense");
-        paper.removeAttribute("data-pdf-remark-xdense");
-      }
+      document.body.classList.remove("screen-pdf-like");
+      paper.style.removeProperty("--pdf-worker-row-h");
+      paper.style.removeProperty("--pdf-workers-col-data-h");
+      paper.style.removeProperty("--pdf-worker-rows-per-half");
+      paper.removeAttribute("data-pdf-worker-col-lock");
+      paper.removeAttribute("data-pdf-worker-compress");
+      paper.style.removeProperty("--pdf-tasks-col-data-h");
+      paper.style.removeProperty("--pdf-task-rows-count");
+      paper.style.removeProperty("--pdf-task-row-h");
+      paper.removeAttribute("data-pdf-task-col-lock");
+      paper.removeAttribute("data-pdf-task-num-dense");
+      paper.style.removeProperty("--pdf-remarks-col-data-h");
+      paper.style.removeProperty("--pdf-remark-rows-count");
+      paper.removeAttribute("data-pdf-remark-col-lock");
+      paper.removeAttribute("data-pdf-remark-dense");
+      paper.removeAttribute("data-pdf-remark-xdense");
     }
 
     /* iPhone Safari の viewport 調整は meta viewport 固定で対応（動的変更は反映されにくい） */
