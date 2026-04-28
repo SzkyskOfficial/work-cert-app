@@ -4314,8 +4314,6 @@
         inner.style.removeProperty("transform");
         inner.style.removeProperty("width");
         inner.style.removeProperty("transform-origin");
-        outer.style.removeProperty("height");
-        outer.style.removeProperty("min-height");
         return;
       }
       const availW = Math.max(1, outer.clientWidth);
@@ -4324,21 +4322,11 @@
       inner.style.width = pw + "px";
       inner.style.transform = "scale(" + s + ")";
       inner.style.transformOrigin = "top center";
-      const h = paper.offsetHeight;
-      outer.style.height = Math.ceil(h * s) + "px";
     }
 
     function initPaperFitScaleWatching() {
-      const paper = document.getElementById("paper");
-      if (!paper) return;
       const schedule = () => requestAnimationFrame(applyPaperFitScale);
-      if (typeof ResizeObserver !== "undefined") {
-        new ResizeObserver(schedule).observe(paper);
-      }
       window.addEventListener("resize", schedule, { passive: true });
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener("resize", schedule, { passive: true });
-      }
       const mq = window.matchMedia("(max-width: 900px)");
       try {
         mq.addEventListener("change", schedule);
