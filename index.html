@@ -1418,17 +1418,20 @@
       /* A4 から @page 余白を除いた内側（上6・下6・左右14） */
       #paper { width: 182mm; min-height: 285mm; box-sizing: border-box; }
     }
-    .pdf-render .stamp-cell {
+    .pdf-render .stamp-cell,
+    .screen-pdf-like .stamp-cell {
       grid-template-rows: auto 1fr;
     }
-    .pdf-render .stamp-preview {
+    .pdf-render .stamp-preview,
+    .screen-pdf-like .stamp-preview {
       flex: 1;
       min-height: 88px;
       align-items: center;
       justify-content: center;
       padding: 6px 4px;
     }
-    .pdf-render .stamp-sign-slot {
+    .pdf-render .stamp-sign-slot,
+    .screen-pdf-like .stamp-sign-slot {
       border: 0 !important;
       background: transparent !important;
       padding: 2px !important;
@@ -1448,32 +1451,42 @@
      */
     /* グリッドは stretch（各セルが行高いっぱい）でないと border-right の縦線が欠ける */
     body.pdf-render #paper .w-head,
-    body.pdf-render #paper .w-row {
+    body.pdf-render #paper .w-row,
+    body.screen-pdf-like #paper .w-head,
+    body.screen-pdf-like #paper .w-row {
       display: grid !important;
       grid-template-columns: 34px 1fr var(--col-contract) !important;
       align-items: stretch !important;
     }
     body.pdf-render #paper .w-head > div,
-    body.pdf-render #paper .w-row > div {
+    body.pdf-render #paper .w-row > div,
+    body.screen-pdf-like #paper .w-head > div,
+    body.screen-pdf-like #paper .w-row > div {
       border-right: 1px solid var(--line) !important;
       box-sizing: border-box !important;
     }
     body.pdf-render #paper .w-head > div:last-child,
-    body.pdf-render #paper .w-row > div:last-child {
+    body.pdf-render #paper .w-row > div:last-child,
+    body.screen-pdf-like #paper .w-head > div:last-child,
+    body.screen-pdf-like #paper .w-row > div:last-child {
       border-right: 0 !important;
     }
-    body.pdf-render #paper .w-row {
+    body.pdf-render #paper .w-row,
+    body.screen-pdf-like #paper .w-row {
       min-height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
       /* 行の実高を確定させないと子の height:100% が効かず、氏名・早残が上詰めに見える（html2canvas 含む） */
       height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
     }
-    body.pdf-render #paper[data-pdf-worker-col-lock="1"] .workers-inner > .half {
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] .workers-inner > .half,
+    body.screen-pdf-like #paper[data-pdf-worker-col-lock="1"] .workers-inner > .half {
       display: flex !important;
       flex-direction: column !important;
       align-items: stretch !important;
     }
     body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wLeft,
-    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight {
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight,
+    body.screen-pdf-like #paper[data-pdf-worker-col-lock="1"] #wLeft,
+    body.screen-pdf-like #paper[data-pdf-worker-col-lock="1"] #wRight {
       display: flex !important;
       flex-direction: column !important;
       flex: 0 0 auto !important;
@@ -1484,7 +1497,9 @@
       overflow: hidden !important;
     }
     body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wLeft .w-row,
-    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight .w-row {
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight .w-row,
+    body.screen-pdf-like #paper[data-pdf-worker-col-lock="1"] #wLeft .w-row,
+    body.screen-pdf-like #paper[data-pdf-worker-col-lock="1"] #wRight .w-row {
       flex: 1 1 0 !important;
       min-height: 0 !important;
       height: auto !important;
@@ -1584,7 +1599,8 @@
       box-sizing: border-box !important;
       overflow: visible !important;
     }
-    body.pdf-render #paper .t-row {
+    body.pdf-render #paper .t-row,
+    body.screen-pdf-like #paper .t-row {
       min-height: var(--task-row-h) !important;
     }
     /*
@@ -1814,19 +1830,24 @@
     #paper[data-pdf-capture="1"][data-pdf-worker-compress="1"] .w-row .w-ot-cell .ot {
       padding: 2px 6px 2px 2px !important;
     }
-    body.pdf-render #paper .company-cell {
+    body.pdf-render #paper .company-cell,
+    body.screen-pdf-like #paper .company-cell {
       overflow: visible !important;
     }
-    body.pdf-render #paper .company-row-plain {
+    body.pdf-render #paper .company-row-plain,
+    body.screen-pdf-like #paper .company-row-plain {
       /* stretch だと .field が行高いっぱいに伸び、文字が縦に寄らない。PDF では行内で縦中央 */
       align-items: center !important;
       overflow: visible !important;
     }
     body.pdf-render #paper .company-row-plain .label,
-    body.pdf-render #paper .company-row-plain .sama {
+    body.pdf-render #paper .company-row-plain .sama,
+    body.screen-pdf-like #paper .company-row-plain .label,
+    body.screen-pdf-like #paper .company-row-plain .sama {
       align-self: center !important;
     }
-    body.pdf-render #paper .company-cell .company-row-plain .field {
+    body.pdf-render #paper .company-cell .company-row-plain .field,
+    body.screen-pdf-like #paper .company-cell .company-row-plain .field {
       align-self: center !important;
       height: auto !important;
       line-height: 1.25 !important;
@@ -1839,10 +1860,12 @@
       line-height: 1.25 !important;
       padding: 2px 4px !important;
     }
-    body.pdf-render #paper .summary-cell {
+    body.pdf-render #paper .summary-cell,
+    body.screen-pdf-like #paper .summary-cell {
       overflow: visible !important;
     }
-    body.pdf-render #paper .summary-val {
+    body.pdf-render #paper .summary-val,
+    body.screen-pdf-like #paper .summary-val {
       overflow: visible !important;
       display: flex !important;
       flex-direction: column !important;
@@ -1852,7 +1875,8 @@
       min-height: 0 !important;
       padding: 0 !important;
     }
-    body.pdf-render #paper .summary-total-input-wrap {
+    body.pdf-render #paper .summary-total-input-wrap,
+    body.screen-pdf-like #paper .summary-total-input-wrap {
       position: relative !important;
       flex: 1 1 auto !important;
       display: flex !important;
@@ -1863,7 +1887,9 @@
       max-width: none !important;
     }
     body.pdf-render #paper .summary-val input,
-    body.pdf-render #paper .summary-total-input-wrap .summary-total-pdf-value {
+    body.pdf-render #paper .summary-total-input-wrap .summary-total-pdf-value,
+    body.screen-pdf-like #paper .summary-val input,
+    body.screen-pdf-like #paper .summary-total-input-wrap .summary-total-pdf-value {
       flex: 1 1 auto !important;
       width: 100% !important;
       min-width: 0 !important;
@@ -3858,6 +3884,7 @@
        */
       document.documentElement.style.setProperty("--remark-row-h", `${workerRefPx}px`);
       requestAnimationFrame(applyPaperFitScale);
+      requestAnimationFrame(applyScreenPdfLikeLayout);
     }
 
     function findWorkerRowByNumLabel(label) {
@@ -4397,6 +4424,85 @@
       window.addEventListener("resize", schedule, { passive: true });
       window.addEventListener("orientationchange", schedule, { passive: true });
       requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
+    }
+
+    function applyScreenPdfLikeLayout() {
+      const paper = document.getElementById("paper");
+      if (!paper) return;
+      const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
+      document.body.classList.toggle("screen-pdf-like", isPhoneLike);
+      if (!isPhoneLike) {
+        paper.style.removeProperty("--pdf-worker-row-h");
+        paper.style.removeProperty("--pdf-workers-col-data-h");
+        paper.style.removeProperty("--pdf-worker-rows-per-half");
+        paper.removeAttribute("data-pdf-worker-col-lock");
+        paper.removeAttribute("data-pdf-worker-compress");
+        paper.style.removeProperty("--pdf-tasks-col-data-h");
+        paper.style.removeProperty("--pdf-task-rows-count");
+        paper.style.removeProperty("--pdf-task-row-h");
+        paper.removeAttribute("data-pdf-task-col-lock");
+        paper.removeAttribute("data-pdf-task-num-dense");
+        paper.style.removeProperty("--pdf-remarks-col-data-h");
+        paper.style.removeProperty("--pdf-remark-rows-count");
+        paper.removeAttribute("data-pdf-remark-col-lock");
+        paper.removeAttribute("data-pdf-remark-dense");
+        paper.removeAttribute("data-pdf-remark-xdense");
+        return;
+      }
+      /* PDFと同じ列ロック条件を画面にも適用 */
+      if (state.workerCount >= 12 && state.workerCount % 2 === 0) {
+        const refPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
+        const rowsPerHalf = state.workerCount / 2;
+        const colDataPx = 6 * refPx;
+        const eachPx = colDataPx / rowsPerHalf;
+        paper.style.setProperty("--pdf-workers-col-data-h", `${colDataPx}px`);
+        paper.style.setProperty("--pdf-worker-rows-per-half", String(rowsPerHalf));
+        paper.style.setProperty("--pdf-worker-row-h", `${eachPx}px`);
+        paper.setAttribute("data-pdf-worker-col-lock", "1");
+        if (state.workerCount > 12) paper.setAttribute("data-pdf-worker-compress", "1");
+      } else {
+        paper.style.removeProperty("--pdf-worker-row-h");
+        paper.style.removeProperty("--pdf-workers-col-data-h");
+        paper.style.removeProperty("--pdf-worker-rows-per-half");
+        paper.removeAttribute("data-pdf-worker-col-lock");
+        paper.removeAttribute("data-pdf-worker-compress");
+      }
+      if (state.taskCount >= 6) {
+        const taskColDataPx = pdfTaskColLockTotalDataHeightPx(state.taskCount, state.remarkCount);
+        const eachTaskPx = pdfTaskColLockEachRowPx(state.taskCount, state.remarkCount);
+        paper.style.setProperty("--pdf-tasks-col-data-h", `${taskColDataPx}px`);
+        paper.style.setProperty("--pdf-task-rows-count", String(state.taskCount));
+        paper.style.setProperty("--pdf-task-row-h", `${eachTaskPx}px`);
+        paper.setAttribute("data-pdf-task-col-lock", "1");
+        if (state.taskCount >= 11) paper.setAttribute("data-pdf-task-num-dense", "1");
+        else paper.removeAttribute("data-pdf-task-num-dense");
+      } else {
+        paper.style.removeProperty("--pdf-tasks-col-data-h");
+        paper.style.removeProperty("--pdf-task-rows-count");
+        paper.style.removeProperty("--pdf-task-row-h");
+        paper.removeAttribute("data-pdf-task-col-lock");
+        paper.removeAttribute("data-pdf-task-num-dense");
+      }
+      if (state.remarkCount >= 5) {
+        const remarkRefPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
+        const remarkColBasePx =
+          PDF_REMARK_COL_LOCK_BASE_ROWS * remarkRefPx +
+          PDF_REMARK_COL_LOCK_BASE_ROWS * PDF_REMARK_COL_LOCK_PER_ROW_BUMP_PX;
+        const remarkColDataPx = Math.round(remarkColBasePx * PDF_REMARK_LOCK_HEIGHT_SCALE_WHEN_5_ROWS);
+        paper.style.setProperty("--pdf-remarks-col-data-h", `${remarkColDataPx}px`);
+        paper.style.setProperty("--pdf-remark-rows-count", String(state.remarkCount));
+        paper.setAttribute("data-pdf-remark-col-lock", "1");
+        if (state.remarkCount >= 10) paper.setAttribute("data-pdf-remark-dense", "1");
+        else paper.removeAttribute("data-pdf-remark-dense");
+        if (state.remarkCount >= 12) paper.setAttribute("data-pdf-remark-xdense", "1");
+        else paper.removeAttribute("data-pdf-remark-xdense");
+      } else {
+        paper.style.removeProperty("--pdf-remarks-col-data-h");
+        paper.style.removeProperty("--pdf-remark-rows-count");
+        paper.removeAttribute("data-pdf-remark-col-lock");
+        paper.removeAttribute("data-pdf-remark-dense");
+        paper.removeAttribute("data-pdf-remark-xdense");
+      }
     }
 
     /* iPhone Safari の viewport 調整は meta viewport 固定で対応（動的変更は反映されにくい） */
@@ -5532,6 +5638,8 @@
     }
     initPaperFitScaleWatching();
     initAutoUpdateCheck();
+    applyScreenPdfLikeLayout();
+    window.addEventListener("resize", () => requestAnimationFrame(applyScreenPdfLikeLayout), { passive: true });
     /* 初回表示を優先して、共有同期はアイドル時に開始（保存済みコードがある端末のみ） */
     const startShared = () => {
       void initSharedSync().catch((err) => {
