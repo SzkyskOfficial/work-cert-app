@@ -42,8 +42,29 @@
       background: #fff;
       border: 0;
       padding: 10px;
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+    }
+    /* 狭い画面：用紙 DOM は PC と同一。見た目だけ等比縮小（レイアウト数値は変えない） */
+    .paper-scale-outer {
+      width: 100%;
+      max-width: 100%;
+      display: flex;
+      justify-content: center;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .paper-scale-inner {
+      width: var(--paper-w);
+      flex-shrink: 0;
+    }
+    body.pdf-render .paper-scale-inner {
+      transform: none !important;
+    }
+    body.pdf-render .paper-scale-outer {
+      height: auto !important;
+      min-height: 0 !important;
     }
     #paper {
       width: var(--paper-w);
@@ -57,7 +78,7 @@
     .paper-sheet-core {
       border: var(--paper-outer-border) solid var(--line);
     }
-    /* 狭い画面でも用紙サイズは PC と同じ（--paper-w）。全体は .paper-wrap で横スクロール。PDF も #paper のみを焼き PC と一致させる */
+    /* 狭い画面：.paper-scale-inner で transform:scale。PDF 時は body.pdf-render で解除し #paper をそのまま焼く */
 
     .title-row {
       position: relative;
@@ -1373,6 +1394,12 @@
       .toolbar { display: none; }
       .workers-add-row { display: none !important; }
       .app, .paper-wrap { margin: 0; padding: 0; border: 0; }
+      .paper-scale-inner {
+        transform: none !important;
+      }
+      .paper-scale-outer {
+        height: auto !important;
+      }
       /* A4 から @page 余白を除いた内側（上6・下6・左右14） */
       #paper { width: 182mm; min-height: 285mm; box-sizing: border-box; }
     }
@@ -2619,6 +2646,8 @@
     </div>
 
     <div class="paper-wrap">
+      <div class="paper-scale-outer">
+        <div class="paper-scale-inner">
       <div id="paper">
         <div class="title-row">
           <span class="title-main">作 業 証 明 書</span>
@@ -2801,6 +2830,8 @@
               <img id="footerCompanyLogo" class="footer-logo" alt="会社ロゴ" />
             </div>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>
@@ -3772,6 +3803,7 @@
        * 備考段数 rc では行高は変えない（密度は densityN = max(12, tc, rc) のみで決まる）。
        */
       document.documentElement.style.setProperty("--remark-row-h", `${workerRefPx}px`);
+      requestAnimationFrame(applyPaperFitScale);
     }
 
     function findWorkerRowByNumLabel(label) {
@@ -4270,6 +4302,52 @@
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, yTop, drawW, drawH, undefined, "FAST");
     }
 
+    /** 狭い画面だけ #paper を等比縮小表示（DOM・レイアウトは PC と同一）。PDF 中は body.pdf-render で CSS 解除 */
+    function applyPaperFitScale() {
+      const paper = document.getElementById("paper");
+      const outer = document.querySelector(".paper-scale-outer");
+      const inner = document.querySelector(".paper-scale-inner");
+      if (!paper || !outer || !inner) return;
+      if (document.body.classList.contains("pdf-render")) return;
+      const mq = window.matchMedia("(max-width: 900px)");
+      if (!mq.matches) {
+        inner.style.removeProperty("transform");
+        inner.style.removeProperty("width");
+        outer.style.removeProperty("height");
+        outer.style.removeProperty("min-height");
+        return;
+      }
+      const pad = 24;
+      const cw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+      const pw = Math.max(1, paper.offsetWidth);
+      const s = Math.min(1, Math.max(0.28, (cw - pad) / pw));
+      inner.style.width = pw + "px";
+      inner.style.transform = "scale(" + s + ")";
+      inner.style.transformOrigin = "top center";
+      const h = paper.offsetHeight;
+      outer.style.height = Math.ceil(h * s) + "px";
+    }
+
+    function initPaperFitScaleWatching() {
+      const paper = document.getElementById("paper");
+      if (!paper) return;
+      const schedule = () => requestAnimationFrame(applyPaperFitScale);
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(schedule).observe(paper);
+      }
+      window.addEventListener("resize", schedule, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", schedule, { passive: true });
+      }
+      const mq = window.matchMedia("(max-width: 900px)");
+      try {
+        mq.addEventListener("change", schedule);
+      } catch (_) {
+        mq.addListener(schedule);
+      }
+      requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
+    }
+
     async function createPdfFile() {
       closeFieldSheet();
       const paper = document.getElementById("paper");
@@ -4409,6 +4487,7 @@
         }
         if (paper) paper.removeAttribute("data-pdf-capture");
         document.body.classList.remove("pdf-render");
+        requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
       }
       const { jsPDF } = window.jspdf;
       const pxToMm = 25.4 / 96;
@@ -5006,6 +5085,7 @@
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(syncFooterColWidth).catch(() => {});
     }
+    initPaperFitScaleWatching();
   </script>
 </body>
 </html>
