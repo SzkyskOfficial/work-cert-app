@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ja" data-rev="rebuild-layout-v1">
+<html lang="ja" data-rev="rebuild-layout-v2">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>作業証明書アプリ (rebuild-layout-v1)</title>
+  <title>作業証明書アプリ (rebuild-layout-v2)</title>
   <style>
     :root {
       --paper-w: 980px;
@@ -5078,6 +5078,51 @@
       img.src = FOOTER_LOGO_FILE;
     }
 
+    /** 公開URLの更新検知: data-rev が変わったら自動リロード（キャッシュが残る通常タブ対策） */
+    const APP_BUILD_REV = String(document.documentElement?.getAttribute("data-rev") || "").trim();
+    let updateCheckInflight = false;
+    let updateReloadScheduled = false;
+    async function checkForRemoteUpdate() {
+      if (updateCheckInflight || updateReloadScheduled) return;
+      if (!APP_BUILD_REV) return;
+      updateCheckInflight = true;
+      try {
+        const bust = Date.now();
+        const url = `${location.origin}${location.pathname}?__revcheck=${bust}`;
+        const res = await fetch(url, {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (!res.ok) return;
+        const txt = await res.text();
+        const m = txt.match(/<html[^>]*\sdata-rev="([^"]+)"/i);
+        const remoteRev = String(m?.[1] || "").trim();
+        if (remoteRev && remoteRev !== APP_BUILD_REV) {
+          updateReloadScheduled = true;
+          location.reload();
+        }
+      } catch (_) {
+        /* オフライン時などは無視 */
+      } finally {
+        updateCheckInflight = false;
+      }
+    }
+    function initAutoUpdateCheck() {
+      const INTERVAL_MS = 90000;
+      setInterval(() => {
+        void checkForRemoteUpdate();
+      }, INTERVAL_MS);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) void checkForRemoteUpdate();
+      });
+      window.addEventListener("focus", () => {
+        void checkForRemoteUpdate();
+      });
+      setTimeout(() => {
+        void checkForRemoteUpdate();
+      }, 2500);
+    }
+
     setTodayToDateInputs();
     loadLists();
     resetGridRowsToDefault();
@@ -5097,6 +5142,7 @@
       document.fonts.ready.then(syncFooterColWidth).catch(() => {});
     }
     initPaperFitScaleWatching();
+    initAutoUpdateCheck();
   </script>
 </body>
 </html>
