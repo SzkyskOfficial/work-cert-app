@@ -38,7 +38,13 @@
     }
     button, input, select, textarea { font-family: inherit; }
     button { padding: 7px 10px; }
-    .paper-wrap { background: #fff; border: 0; padding: 10px; overflow: auto; }
+    .paper-wrap {
+      background: #fff;
+      border: 0;
+      padding: 10px;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     #paper {
       width: var(--paper-w);
       min-height: var(--paper-h);
@@ -51,14 +57,7 @@
     .paper-sheet-core {
       border: var(--paper-outer-border) solid var(--line);
     }
-    /* スマホ幅では用紙を画面幅に合わせ（PDF も画面レイアウトに近づける） */
-    @media (max-width: 900px) {
-      #paper {
-        width: 100%;
-        max-width: 100%;
-        min-height: auto;
-      }
-    }
+    /* 狭い画面でも用紙サイズは PC と同じ（--paper-w）。全体は .paper-wrap で横スクロール。PDF も #paper のみを焼き PC と一致させる */
 
     .title-row {
       position: relative;
@@ -164,39 +163,6 @@
       flex: 0 0 auto;
       min-width: 3.25em;
       text-align: right;
-    }
-    /* スマホ：上の @media より後の .date-inline に負けないよう #paper で詳細度アップ */
-    @media (max-width: 900px) {
-      #paper .title-row .date-inline {
-        right: 2px;
-        bottom: 0;
-        width: auto;
-        max-width: calc(100% - 4px);
-        align-items: flex-end;
-        line-height: 1.1;
-      }
-      #paper .title-row .date-inline input {
-        padding: 0 0.08em 0;
-        min-height: 0;
-        line-height: 1.1;
-        -webkit-appearance: none;
-        appearance: none;
-      }
-      #paper .title-row .date-inline input#year,
-      #paper .title-row .date-inline input#month,
-      #paper .title-row .date-inline input#day {
-        padding: 0;
-        min-height: 0;
-        height: 1.12em;
-        line-height: 1.05;
-      }
-      #paper .title-row .date-inline .date-ymd {
-        line-height: 1;
-      }
-      #paper .title-row .date-inline .weekday-inline {
-        margin-left: -0.45em;
-        line-height: 1.1;
-      }
     }
     .circled { position: relative; display: inline-block; padding: 0 5px; cursor: pointer; }
     .circled.active::after {
@@ -924,15 +890,6 @@
       height: 1.12em;
       -webkit-appearance: none;
       appearance: none;
-    }
-    @media (max-width: 900px) {
-      #paper .title-row .date-inline input:focus,
-      #paper .title-row .date-inline input:focus-visible {
-        padding: 0 4px 0;
-        min-height: 0;
-        height: 1.12em;
-        line-height: 1.05;
-      }
     }
     /* 総工数・早・残：枠いっぱいのフォーカス時もリングを入力枠に合わせる */
     #paper .summary-total-input-wrap input:focus,
@@ -4119,8 +4076,9 @@
       document.getElementById("day").value = String(t.getDate()).padStart(2, "0");
     }
 
+    /** 常に #paper を html2canvas する（PCと同一レイアウトの A4 流し込み）。旧: 狭い画面ではビューポートキャプチャでズレていた */
     function pdfUseViewportCapture() {
-      return window.matchMedia("(max-width: 900px)").matches;
+      return false;
     }
 
     /**
