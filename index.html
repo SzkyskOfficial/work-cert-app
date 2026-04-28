@@ -4311,37 +4311,18 @@
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, yTop, drawW, drawH, undefined, "FAST");
     }
 
-    /** 狭い画面だけ #paper を等比縮小表示（DOM・レイアウトは PC と同一）。PDF 中は body.pdf-render で CSS 解除 */
+    /** PC と同じ操作系に統一するため、スマホ専用の transform 縮小は無効化 */
     function applyPaperFitScale() {
       const paper = document.getElementById("paper");
       const outer = document.querySelector(".paper-scale-outer");
       const inner = document.querySelector(".paper-scale-inner");
       if (!paper || !outer || !inner) return;
-      if (document.body.classList.contains("pdf-render")) return;
-      const mq = window.matchMedia("(max-width: 900px)");
-      if (!mq.matches) {
-        inner.style.removeProperty("transform");
-        inner.style.removeProperty("width");
-        inner.style.removeProperty("transform-origin");
-        return;
-      }
-      const availW = Math.max(1, outer.clientWidth);
-      const pw = Math.max(1, paper.scrollWidth || paper.offsetWidth);
-      const s = Math.min(1, availW / pw);
-      inner.style.width = pw + "px";
-      inner.style.transform = "scale(" + s + ")";
-      inner.style.transformOrigin = "top center";
+      inner.style.removeProperty("transform");
+      inner.style.removeProperty("width");
+      inner.style.removeProperty("transform-origin");
     }
 
     function initPaperFitScaleWatching() {
-      const schedule = () => requestAnimationFrame(applyPaperFitScale);
-      window.addEventListener("resize", schedule, { passive: true });
-      const mq = window.matchMedia("(max-width: 900px)");
-      try {
-        mq.addEventListener("change", schedule);
-      } catch (_) {
-        mq.addListener(schedule);
-      }
       requestAnimationFrame(() => requestAnimationFrame(applyPaperFitScale));
     }
 
