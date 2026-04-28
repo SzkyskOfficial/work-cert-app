@@ -5518,13 +5518,21 @@
       if (sharedSyncTimer) clearTimeout(sharedSyncTimer);
       sharedSyncTimer = window.setTimeout(() => {
         sharedSyncTimer = 0;
+        if (isSharedUiBusy()) {
+          scheduleSharedPush();
+          return;
+        }
         runWhenIdle(() => {
           void pushSharedSnapshot();
-        }, 2000);
-      }, 1200);
+        }, 4000);
+      }, 3500);
     }
     async function pushSharedSnapshot() {
       if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef || sharedPushInflight) return;
+      if (isSharedUiBusy()) {
+        scheduleSharedPush();
+        return;
+      }
       sharedPushInflight = true;
       const payload = captureAppSnapshot();
       const json = JSON.stringify(payload);
