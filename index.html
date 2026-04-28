@@ -1,0 +1,5013 @@
+<!doctype html>
+<html lang="ja" data-rev="rebuild-layout-v1">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>作業証明書アプリ (rebuild-layout-v1)</title>
+  <style>
+    :root {
+      --paper-w: 980px;
+      --paper-h: 1386px;
+      --line: #222;
+      /* 会社名～備考ブロックの外枠（タイトル行・フッターには付けない） */
+      --paper-outer-border: 3px;
+      --dot: #666;
+      /* 初期値は adjustDensity（PDF12名列ロックと同じ refPx）で上書き。画面の作業員行高は人数では変えない */
+      --worker-row-h: 70px;
+      /* 作業内容行高は adjustDensity（画面では作業員行と同じ refPx）で上書き */
+      --task-row-h: 84px;
+      --remark-row-h: 48px;
+      /* 請負・常庸列＝早・残列の幅 */
+      --col-contract: 74px;
+      /* ヘッダー：総工数・早・残の固定幅／確認印列（会社名ブロックは 1fr で残り） */
+      --header-col-summary: 110px;
+      --header-col-stamp: 146px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eceff3; font-family: "Yu Gothic UI", "Meiryo", sans-serif; }
+    .app { max-width: 1180px; margin: 0 auto; padding: 16px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .toolbar button[data-lists-tab]:focus-visible {
+      outline: 2px solid #3b7dd1;
+      outline-offset: 2px;
+    }
+    .toolbar button[data-lists-tab].lists-tab-active {
+      outline: 2px solid #3b7dd1;
+      outline-offset: 2px;
+      box-shadow: 0 0 0 1px rgba(59, 125, 209, 0.35);
+    }
+    button, input, select, textarea { font-family: inherit; }
+    button { padding: 7px 10px; }
+    .paper-wrap { background: #fff; border: 0; padding: 10px; overflow: auto; }
+    #paper {
+      width: var(--paper-w);
+      min-height: var(--paper-h);
+      margin: 0 auto;
+      background: #fff;
+      border: 0;
+    }
+    /* 作業証明書～曜日・フッター（株式会社～ロゴ）は枠なし。太枠は表本体のみ。
+       上辺＝タイトル行と会社名グリッドの境の 3px（.header-grid 側では重ねない） */
+    .paper-sheet-core {
+      border: var(--paper-outer-border) solid var(--line);
+    }
+    /* スマホ幅では用紙を画面幅に合わせ（PDF も画面レイアウトに近づける） */
+    @media (max-width: 900px) {
+      #paper {
+        width: 100%;
+        max-width: 100%;
+        min-height: auto;
+      }
+    }
+
+    .title-row {
+      position: relative;
+      /* 日付（30px級）の上欠けを防ぐため、固定高さより余裕を持たせる */
+      min-height: 96px;
+      height: auto;
+      overflow: visible;
+      border-bottom: 0;
+      display: flex;
+      justify-content: flex-start;
+      align-items: stretch;
+      font-weight: 700;
+      font-size: 42px;
+      letter-spacing: 11px;
+      text-decoration: none;
+    }
+    .title-main {
+      align-self: center;
+      padding-left: 20px;
+      text-decoration: underline;
+      text-underline-offset: 8px;
+      text-decoration-thickness: 1px;
+    }
+    .shift-toggle {
+      position: absolute;
+      right: 318px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 28px;
+      letter-spacing: normal;
+      white-space: nowrap;
+    }
+    .date-inline {
+      position: absolute;
+      right: 14px;
+      bottom: 4px;
+      /* 右端固定・幅一定で入力してもブロック位置がずれない */
+      width: 22.5em;
+      max-width: calc(100% - 24px);
+      box-sizing: border-box;
+      display: flex;
+      flex-wrap: nowrap;
+      /* 年月日ブロックと曜日の下辺で揃える */
+      align-items: flex-end;
+      justify-content: flex-end;
+      gap: 0;
+      font-size: 24px;
+      letter-spacing: normal;
+      line-height: 1.35;
+      white-space: nowrap;
+      text-align: right;
+      overflow: visible;
+    }
+    /* 年・月・日（数字＋単位）だけをまとめて下詰め */
+    .date-ymd {
+      display: inline-flex;
+      flex-wrap: nowrap;
+      align-items: flex-end;
+      gap: 0;
+      font-size: inherit;
+      line-height: 1;
+    }
+    .date-inline input {
+      border: 0;
+      border-bottom: 0;
+      text-align: right;
+      font-size: 24px;
+      padding: 6px 0.08em 5px;
+      background: transparent;
+      font-variant-numeric: tabular-nums;
+      flex: 0 0 auto;
+      box-sizing: border-box;
+      line-height: 1.35;
+      min-height: 1.6em;
+      overflow: visible;
+    }
+    .date-inline input#year,
+    .date-inline input#month,
+    .date-inline input#day {
+      font-size: 30px;
+      /* 欄内で数字を下詰め：余白を削り、行ボックスを字高に近づける */
+      line-height: 1.05;
+      padding: 0 0.08em 0;
+      min-height: 0;
+      height: 1.12em;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .date-inline input#year {
+      width: 5.5ch;
+      min-width: 5.5ch;
+    }
+    .date-inline input#month,
+    .date-inline input#day {
+      width: 3.2ch;
+      min-width: 3.2ch;
+    }
+    .date-inline .weekday-inline {
+      font-weight: 700;
+      font-size: 24px;
+      margin-left: -0.56em;
+      padding-left: 0;
+      flex: 0 0 auto;
+      min-width: 3.25em;
+      text-align: right;
+    }
+    /* スマホ：上の @media より後の .date-inline に負けないよう #paper で詳細度アップ */
+    @media (max-width: 900px) {
+      #paper .title-row .date-inline {
+        right: 2px;
+        bottom: 0;
+        width: auto;
+        max-width: calc(100% - 4px);
+        align-items: flex-end;
+        line-height: 1.1;
+      }
+      #paper .title-row .date-inline input {
+        padding: 0 0.08em 0;
+        min-height: 0;
+        line-height: 1.1;
+        -webkit-appearance: none;
+        appearance: none;
+      }
+      #paper .title-row .date-inline input#year,
+      #paper .title-row .date-inline input#month,
+      #paper .title-row .date-inline input#day {
+        padding: 0;
+        min-height: 0;
+        height: 1.12em;
+        line-height: 1.05;
+      }
+      #paper .title-row .date-inline .date-ymd {
+        line-height: 1;
+      }
+      #paper .title-row .date-inline .weekday-inline {
+        margin-left: -0.45em;
+        line-height: 1.1;
+      }
+    }
+    .circled { position: relative; display: inline-block; padding: 0 5px; cursor: pointer; }
+    .circled.active::after {
+      content: "";
+      position: absolute;
+      inset: -2px -4px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .t-row.contract-mark-hidden .circled.active::after {
+      content: none;
+    }
+
+    .header-grid {
+      display: grid;
+      grid-template-columns: 1fr var(--header-col-summary) var(--header-col-summary) var(--header-col-stamp);
+      /* 上辺の 3px は .paper-sheet-core の border-top のみ（二重にすると太く見える） */
+      border-top: 0;
+      /* 現場名行の下＝ヘッダーと作業員欄の境（外枠と同じ太さ） */
+      border-bottom: var(--paper-outer-border) solid var(--line);
+      height: 132px;
+    }
+    .header-cell {
+      border-right: 1px solid var(--line);
+      padding: 6px;
+      font-size: 24px;
+      overflow: visible;
+    }
+    .header-cell:last-child { border-right: 0; }
+    .company-cell {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      padding: 0;
+    }
+    .company-row-plain {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+      padding: 0 6px;
+    }
+    .company-row-plain .label,
+    .company-row-plain .sama {
+      align-self: center;
+    }
+    .company-row-plain + .company-row-plain {
+      border-top: 1px solid var(--line);
+    }
+    .label { min-width: 84px; font-weight: 600; }
+    .field {
+      flex: 1;
+      align-self: stretch;
+      border: 0;
+      border-bottom: 0;
+      background: transparent;
+      font-size: clamp(18px, 2vw, 24px);
+      padding: 2px 4px;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
+    }
+    .company-row-plain .field {
+      align-self: stretch;
+      line-height: 1.25;
+      padding: 2px 4px;
+    }
+    /*
+     * html2canvas の onclone でだけ #companyName / #siteName の input を span に差し替えたとき用。
+     * 画面の input には存在しない（PDF クローン専用）
+     */
+    #paper .company-row-plain .header-field-pdf-value {
+      flex: 1 1 auto;
+      min-width: 0;
+      align-self: center;
+      display: flex;
+      align-items: center;
+      box-sizing: border-box;
+      font-size: clamp(18px, 2vw, 24px);
+      line-height: 1.25;
+      font-weight: 400;
+      color: #000;
+      padding: 2px 4px;
+      overflow: visible;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    /*
+     * html2canvas の onclone でだけ .worker-name / .worker-ot の input を span に差し替えたとき用。
+     * input は縦位置が焼き込みで欠けやすいため、flex で行の中央に揃える（画面の input には存在しない）。
+     * 詳細度は body.pdf-render … .worker-name 等より上げる。
+     */
+    body.pdf-render #paper .w-row .name-wrap .worker-name-pdf-value,
+    #paper[data-pdf-capture="1"] .w-row .name-wrap .worker-name-pdf-value,
+    #paper[data-pdf-worker-col-lock="1"] .w-row .name-wrap .worker-name-pdf-value,
+    #paper[data-pdf-worker-compress="1"] .w-row .name-wrap .worker-name-pdf-value {
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      box-sizing: border-box !important;
+      font-size: clamp(14px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.27), 28px) !important;
+      line-height: 1.25 !important;
+      font-weight: 400 !important;
+      color: #000 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    body.pdf-render #paper .w-row .w-ot-cell .worker-ot-pdf-value.ot,
+    #paper[data-pdf-capture="1"] .w-row .w-ot-cell .worker-ot-pdf-value.ot,
+    #paper[data-pdf-worker-col-lock="1"] .w-row .w-ot-cell .worker-ot-pdf-value.ot,
+    #paper[data-pdf-worker-compress="1"] .w-row .w-ot-cell .worker-ot-pdf-value.ot {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      box-sizing: border-box !important;
+      font-weight: 700 !important;
+      font-variant-numeric: tabular-nums !important;
+      text-align: center !important;
+      font-size: clamp(15px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.30), 30px) !important;
+      line-height: 1 !important;
+      padding: 1px 6px 6px 2px !important;
+      color: #000 !important;
+      margin: 0 !important;
+      position: relative !important;
+      z-index: 1 !important;
+      overflow: visible !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+    }
+    .sheet-target[readonly] {
+      cursor: pointer;
+      caret-color: transparent;
+    }
+    .sama {
+      min-width: 28px;
+      text-align: right;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .summary-cell {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 0;
+      overflow: visible;
+      min-height: 0;
+    }
+    .summary-head {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 18px;
+      min-height: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .summary-val {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      height: 100%;
+      min-height: 0;
+      font-size: 30px;
+      padding: 0;
+      position: relative;
+      text-align: center;
+      overflow: visible;
+    }
+    .summary-val input {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      min-height: 0;
+      height: 100%;
+      border: 0;
+      border-bottom: 0;
+      background: transparent;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+      /* 単位は右下オーバーレイのため左右パディングを同じにし、数字をセル左右中央に */
+      padding: 0 26px;
+      box-sizing: border-box;
+      overflow: visible;
+    }
+    #totalWorkers,
+    #totalOvertime { border-bottom: 0; }
+    /*
+     * html2canvas クローンのみ：総工数・早・残の input を span に差し替えた表示
+     */
+    #paper .summary-total-input-wrap .summary-total-pdf-value {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      min-height: 0;
+      height: 100%;
+      margin: 0;
+      padding: 0 26px;
+      border: 0;
+      background: transparent;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+      color: #000;
+    }
+    .summary-total-input-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      min-height: 0;
+      width: 100%;
+      max-width: none;
+    }
+    /* 単位：入力枠の右下に絶対配置オーバーレイ。文字はこの枠内で上下左右中央 */
+    .summary-total-input-wrap .unit {
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      width: 1.55em;
+      height: 1.55em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      font-weight: 600;
+      pointer-events: none;
+      color: #222;
+    }
+    .stamp-cell {
+      display: grid;
+      /* 総工数・早・残（.summary-cell）と同じ 2 行構成で行高を揃える */
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 0;
+      min-height: 0;
+    }
+    .stamp-title {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 18px;
+      min-height: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .stamp-preview {
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+      padding: 0;
+      min-height: 0;
+    }
+    .stamp-sign-slot {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: stretch;
+      width: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
+      align-self: stretch;
+      box-sizing: border-box;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* サイン画像を確認印の角丸枠内に厳密にクリップ（入力と同じ 2px） */
+    .stamp-sign-slot.has-signature {
+      overflow: hidden;
+      border-radius: 2px;
+      /* 入力の border 1px + padding 4px と同じオフセット用 */
+      --sign-inset: 5px;
+    }
+    /* 他の readonly 記入欄と同じく sheet-target の input でタップを拾う */
+    .stamp-sign-slot-input {
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 44px;
+      margin: 0;
+      /* 通常は他の記入欄と同様のニュートラル枠（青はフォーカス／シート表示時のみ） */
+      border: 1px solid #c5cad3;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.98);
+      padding: 4px;
+      box-sizing: border-box;
+      font-size: 1px;
+      line-height: 1;
+      color: transparent;
+      caret-color: transparent;
+      cursor: pointer;
+      text-align: center;
+    }
+    .stamp-sign-slot-input:hover {
+      background: #fafbfc;
+      border-color: #9aa0ac;
+    }
+    #signImage {
+      display: none;
+      position: absolute;
+      box-sizing: border-box;
+      /* 大きな PNG でも intrinsic に引っ張られないよう、枠内の明示サイズ＋ contain で全体を表示 */
+      left: var(--sign-inset, 5px);
+      top: var(--sign-inset, 5px);
+      width: calc(100% - 2 * var(--sign-inset, 5px));
+      height: calc(100% - 2 * var(--sign-inset, 5px));
+      max-width: calc(100% - 2 * var(--sign-inset, 5px));
+      max-height: calc(100% - 2 * var(--sign-inset, 5px));
+      margin: 0;
+      border: 0;
+      outline: 0;
+      object-fit: contain;
+      object-position: center;
+      pointer-events: none;
+      z-index: 1;
+      filter: none;
+    }
+    .stamp-sign-slot.has-signature #signImage {
+      display: block;
+    }
+    .workers {
+      /* 作業内容グリッドの上の境 */
+      border-bottom: var(--paper-outer-border) solid var(--line);
+    }
+    .workers-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    /* マウント前は workers 直下に置くが、ここでは見えないようにする */
+    .workers > .workers-add-row {
+      display: none !important;
+    }
+    .name-wrap .workers-add-row {
+      position: absolute;
+      right: 2px;
+      top: 50%;
+      bottom: auto;
+      transform: translateY(-50%);
+      display: flex !important;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 0;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .workers-add-btn {
+      box-sizing: border-box;
+      pointer-events: auto;
+      padding: 0;
+      margin: 0;
+      border-radius: 50%;
+      border: 1px solid #c5cad3;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: none;
+      line-height: 1;
+      color: #0a1a4a;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+      font-weight: 900;
+      letter-spacing: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .workers-add-btn:hover {
+      background: #f4f6f9;
+      border-color: #9aa0ac;
+      color: #050a28;
+    }
+    .half { border-right: 1px solid var(--line); }
+    .half:last-child { border-right: 0; }
+    .w-head, .w-row {
+      display: grid;
+      grid-template-columns: 34px 1fr var(--col-contract);
+    }
+    .w-head { height: 32px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; }
+    .w-head > div, .w-row > div { border-right: 1px solid var(--line); display: flex; align-items: center; justify-content: center; }
+    .w-head > div:last-child, .w-row > div:last-child { border-right: 0; }
+    .w-row > div:nth-child(2) {
+      align-items: stretch;
+      justify-content: flex-start;
+      flex-direction: column;
+      min-height: 0;
+      padding: 0 4px;
+      position: relative;
+    }
+    .w-row .name-wrap:has(.workers-add-row) {
+      overflow: visible;
+    }
+    .name-wrap .workers-add-btn {
+      /* 〇を大きく、+ は青で円の中央（グリッド＋内側 span で幾何中心に寄せる） */
+      --add-btn-size: min(64px, max(42px, calc(var(--worker-row-h) + 4px)));
+      width: var(--add-btn-size);
+      height: var(--add-btn-size);
+      min-width: var(--add-btn-size);
+      min-height: var(--add-btn-size);
+      border-width: 1px;
+      border-color: #c5cad3;
+      color: #1565e6;
+      font-size: 0;
+      line-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
+    }
+    .name-wrap .workers-add-btn .workers-add-plus {
+      /* テキスト + はフォントでズレるため SVG で幾何中心に描画 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 82%;
+      height: 82%;
+      max-width: 100%;
+      max-height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      color: inherit;
+      flex: 0 0 auto;
+    }
+    .name-wrap .workers-add-btn .workers-add-plus-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    .name-wrap .workers-add-btn:hover {
+      color: #0d47c4;
+      border-color: #b8bdc7;
+      background: rgba(255, 255, 255, 0.98);
+    }
+    /* 作業内容：マウント前は .tasks 直下に置くが非表示 */
+    .tasks > .workers-add-row {
+      display: none !important;
+    }
+    /* 最終行・左端（作業内容）セル内に + を右詰め（人工列の左隣） */
+    .t-row > div.task-main-cell {
+      position: relative;
+      overflow: visible;
+    }
+    .t-row > div.task-main-cell .workers-add-row {
+      position: absolute;
+      right: 2px;
+      top: 50%;
+      bottom: auto;
+      transform: translateY(-50%);
+      display: flex !important;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 0;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .t-row > div.task-main-cell .workers-add-btn {
+      --add-btn-size: min(60px, max(30px, calc(var(--task-row-h) - 2px)));
+      width: var(--add-btn-size);
+      height: var(--add-btn-size);
+      min-width: var(--add-btn-size);
+      min-height: var(--add-btn-size);
+      border-width: 1px;
+      border-color: #c5cad3;
+      color: #1565e6;
+      font-size: 0;
+      line-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
+    }
+    .t-row > div.task-main-cell .workers-add-btn .workers-add-plus {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 82%;
+      height: 82%;
+      max-width: 100%;
+      max-height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      color: inherit;
+      flex: 0 0 auto;
+    }
+    .t-row > div.task-main-cell .workers-add-btn .workers-add-plus-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    .t-row > div.task-main-cell .workers-add-btn:hover {
+      color: #0d47c4;
+      border-color: #b8bdc7;
+      background: rgba(255, 255, 255, 0.98);
+    }
+    .w-row .name-wrap .worker-name {
+      flex: 1 1 auto;
+      align-self: stretch;
+      min-height: 0;
+      width: 100%;
+      height: auto;
+      max-height: 100%;
+      display: block;
+      /* 行高 --worker-row-h（作業・備考の密度。人数による行の詰めは PDF のみ） */
+      font-size: clamp(14px, calc(var(--worker-row-h) * 0.27), 28px);
+      line-height: max(1.3em, calc(var(--worker-row-h) - 3px));
+      /* 氏名列内で右いっぱい（+ は上に重ねる）。早・残列との隙間は列の padding に任せる */
+      padding: 0;
+      box-sizing: border-box;
+    }
+    /* 縦線は各セルが行高まで stretch して border-right が通る。氏名・早・残の縦位置は列内 flex で中央 */
+    .w-row {
+      min-height: var(--worker-row-h);
+      border-bottom: 1px dotted var(--dot);
+    }
+    .w-row:last-child {
+      border-bottom-color: transparent;
+    }
+    .w-row .name-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      align-self: stretch;
+      flex: 1 1 auto;
+      justify-content: center;
+      padding: 0;
+      min-height: 0;
+      width: 100%;
+    }
+    .w-row input {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      font-size: 13px;
+      line-height: 1.15;
+      padding: 0;
+    }
+    .w-row > div.w-ot-cell {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 0;
+      padding: 0 4px;
+      overflow: visible;
+    }
+    /* 早・残：ラッパーで縦中央。単位「ｈ」は ::after で右下（数字とは重ねない） */
+    .w-ot-input-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 0;
+      width: 100%;
+      overflow: visible;
+    }
+    .w-row .w-ot-cell .ot {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      max-height: 100%;
+      text-align: center;
+      /* 氏名よりやや大きめに --worker-row-h でスケール（画面は人数で行高は変えない） */
+      font-size: clamp(15px, calc(var(--worker-row-h) * 0.30), 30px);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      align-self: center;
+      box-sizing: border-box;
+      line-height: 1;
+      overflow: visible;
+      -webkit-appearance: none;
+      appearance: none;
+      /* 単位「ｈ」は ::after。下側に余白を足して数字位置を調整 */
+      padding: 1px 6px 6px 2px;
+    }
+
+    /* 早・残などと同系の青枠（フォーカス／記入シートのアンカー） */
+    #paper .w-row input:focus,
+    #paper .w-row input:focus-visible,
+    #paper .w-row input.is-field-sheet-open,
+    #paper .t-row .task-dual input:focus,
+    #paper .t-row .task-dual input:focus-visible,
+    #paper .t-row .task-dual input.is-field-sheet-open,
+    #paper .t-row .task-unit-input-wrap input:focus,
+    #paper .t-row .task-unit-input-wrap input:focus-visible,
+    #paper .t-row .task-unit-input-wrap input.is-field-sheet-open,
+    #paper .stamp-sign-slot-input.sheet-target:focus,
+    #paper .stamp-sign-slot-input.sheet-target:focus-visible,
+    #paper .stamp-sign-slot-input.sheet-target.is-field-sheet-open,
+    #paper .header-cell .field.sheet-target:focus,
+    #paper .header-cell .field.sheet-target:focus-visible,
+    #paper .header-cell .field.sheet-target.is-field-sheet-open,
+    #paper .summary-total-input-wrap input:focus,
+    #paper .summary-total-input-wrap input:focus-visible,
+    #paper .title-row .date-inline input:focus,
+    #paper .title-row .date-inline input:focus-visible,
+    #paper .remarks-list textarea:focus,
+    #paper .remarks-list textarea:focus-visible {
+      outline: none;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.98);
+      /* フォーカスリングを入力枠の内側に（outline は border box 外側になりやすい） */
+      box-shadow: inset 0 0 0 2px #3b7dd1;
+    }
+    /* 氏名のみフォーカスで拡大（早・残はセルサイズを変えない） */
+    #paper .w-row .name-wrap input:focus,
+    #paper .w-row .name-wrap input:focus-visible,
+    #paper .w-row .name-wrap input.is-field-sheet-open {
+      font-size: 18px;
+      line-height: 1.25;
+      flex: 1 1 auto;
+      align-self: stretch;
+      min-height: 0;
+      height: 100%;
+      padding: 0;
+      box-sizing: border-box;
+      transform: none;
+    }
+    #paper .w-ot-cell .worker-ot:focus,
+    #paper .w-ot-cell .worker-ot:focus-visible,
+    #paper .w-ot-cell .worker-ot.is-field-sheet-open {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1 1 auto;
+      align-self: stretch;
+      min-height: 0;
+      height: 100%;
+      line-height: 1;
+      box-sizing: border-box;
+    }
+    #paper .t-row .task-dual input:focus,
+    #paper .t-row .task-dual input:focus-visible,
+    #paper .t-row .task-dual input.is-field-sheet-open {
+      font-size: clamp(16px, calc(var(--task-row-h) * 0.30), 22px);
+      line-height: 1.25;
+      min-height: 0;
+      height: 100%;
+      align-self: stretch;
+      padding: 0;
+      box-sizing: border-box;
+      transform: none;
+    }
+    #paper .t-row .task-unit-input-wrap input:focus,
+    #paper .t-row .task-unit-input-wrap input:focus-visible,
+    #paper .t-row .task-unit-input-wrap input.is-field-sheet-open {
+      font-size: clamp(18px, calc(var(--task-row-h) * 0.36), 26px);
+      line-height: 1;
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    #paper .t-row .task-unit-input-wrap input.task-man:focus,
+    #paper .t-row .task-unit-input-wrap input.task-man:focus-visible,
+    #paper .t-row .task-unit-input-wrap input.task-man.is-field-sheet-open {
+      padding-right: 26px;
+    }
+    #paper .t-row .task-unit-input-wrap input.task-hours:focus,
+    #paper .t-row .task-unit-input-wrap input.task-hours:focus-visible,
+    #paper .t-row .task-unit-input-wrap input.task-hours.is-field-sheet-open {
+      padding-right: 16px;
+    }
+    #paper .header-cell .field.sheet-target:focus,
+    #paper .header-cell .field.sheet-target:focus-visible,
+    #paper .header-cell .field.sheet-target.is-field-sheet-open {
+      font-size: 24px;
+      line-height: 1.2;
+      padding: 0 6px;
+      min-height: 0;
+      height: 100%;
+      align-self: stretch;
+      box-sizing: border-box;
+      transform: none;
+    }
+    #paper .title-row .date-inline input:focus,
+    #paper .title-row .date-inline input:focus-visible {
+      font-size: 30px;
+      line-height: 1.05;
+      padding: 0 4px 0;
+      min-height: 0;
+      height: 1.12em;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    @media (max-width: 900px) {
+      #paper .title-row .date-inline input:focus,
+      #paper .title-row .date-inline input:focus-visible {
+        padding: 0 4px 0;
+        min-height: 0;
+        height: 1.12em;
+        line-height: 1.05;
+      }
+    }
+    /* 総工数・早・残：枠いっぱいのフォーカス時もリングを入力枠に合わせる */
+    #paper .summary-total-input-wrap input:focus,
+    #paper .summary-total-input-wrap input:focus-visible {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    #paper .remarks-list textarea:focus,
+    #paper .remarks-list textarea:focus-visible {
+      font-size: clamp(15px, calc(var(--remark-row-h) * 0.34), 22px);
+      line-height: 1.3;
+      padding: 6px 4px;
+      min-height: var(--remark-row-h);
+    }
+
+    .tasks {
+      /* 備考グリッドの上の境 */
+      border-bottom: var(--paper-outer-border) solid var(--line);
+    }
+    .t-head, .t-row {
+      display: grid;
+      /* 左1・2列結合＋人工・ｈ（やや広げて作業欄側へ寄せる）＋請負 */
+      grid-template-columns: minmax(0, 1fr) 90px 78px var(--col-contract);
+      align-items: stretch;
+    }
+    .t-head { height: 32px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 13px; }
+    .t-head > div, .t-row > div {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .t-head > div {
+      border-right: 0;
+    }
+    /* 人工・ｈ列の上は縦線なし。請負・常庸の左の縦線のみ（ｈ列の右縁） */
+    .t-head-merge + .t-head-pad + .t-head-pad {
+      border-right: 1px solid var(--line);
+    }
+    .t-head > div.t-head-pad {
+      padding: 0;
+    }
+    .t-row > div {
+      border-right: 0;
+    }
+    /* 請負・常庸の左の縦線：ｈ列の右縁を作業行の下まで */
+    .t-row > div:nth-child(3) {
+      border-right: 1px solid var(--line);
+    }
+    /* 備考：と同じ左詰め・字サイズ（.t-head > div の中央寄せより詳細度で上書き） */
+    .t-head > div.t-head-merge {
+      grid-column: 1 / 2;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 3px 6px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: normal;
+    }
+    .t-row { min-height: var(--task-row-h); border-bottom: 1px dotted var(--dot); }
+    /* 最終行も下線分の高さを確保し、他段と同じボックスになる（+ 行の入力コンテンツ領域を揃える） */
+    .t-row:last-child {
+      border-bottom-color: transparent;
+    }
+    .t-row > div.task-main-cell {
+      justify-content: flex-start;
+      align-items: stretch;
+      padding: 0;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+    }
+    /*
+     * 人工・ｈの .task-unit-input-wrap が margin-left:-14px で左に食い込むため、
+     * 作業内容の入力（content-box 含む）と数字欄が重ならないよう右に同幅を空ける。
+     */
+    .t-row .task-dual {
+      display: grid;
+      /* 区分・工区・詳細（行上にラベルは出さず入力のみ）。区分を狭くし詳細を広げる */
+      grid-template-columns: minmax(0, 16%) minmax(0, 18%) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      column-gap: 0.35em;
+      align-items: stretch;
+      padding: 0 14px 0 0;
+      min-width: 0;
+      min-height: 0;
+      flex: 1 1 auto;
+      align-self: stretch;
+      width: 100%;
+      max-height: 100%;
+      box-sizing: border-box;
+    }
+    .t-row .task-dual input {
+      min-width: 0;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .t-row .task-dual input.task-type,
+    .t-row .task-dual input.task-sector,
+    .t-row .task-dual input.task-detail {
+      min-height: 0;
+      height: auto;
+      max-height: calc(var(--task-row-h) - 8px);
+      align-self: center;
+      font-size: clamp(15px, calc(var(--task-row-h) * 0.28), 20px);
+      line-height: 1.25;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    .t-row .task-dual input.task-type,
+    .t-row .task-dual input.task-sector {
+      text-align: center;
+    }
+    .t-row .task-dual input.task-detail {
+      text-align: left;
+    }
+    .t-row input {
+      border: 0;
+      background: transparent;
+      font-size: 13px;
+      line-height: 1.15;
+      padding: 0;
+    }
+    .t-row .num {
+      align-items: stretch;
+      justify-content: center;
+      padding: 2px 4px;
+    }
+    .t-row .num input {
+      text-align: center;
+      font-size: clamp(16px, calc(var(--task-row-h) * 0.34), 24px);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+    }
+    .t-row > div.num.task-cell-unit {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      padding: 0 4px;
+      align-items: stretch;
+      align-self: stretch;
+      justify-content: center;
+      min-height: 0;
+      height: 100%;
+    }
+    .task-unit-input-wrap {
+      position: relative;
+      z-index: 1;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 0;
+      width: calc(100% + 14px);
+      max-width: none;
+      margin-left: -14px;
+      box-sizing: border-box;
+    }
+    .t-row > div.num.task-cell-unit input {
+      display: block;
+      width: 100%;
+      flex: 0 1 auto;
+      min-height: 0;
+      text-align: center;
+      box-sizing: border-box;
+      height: auto;
+      max-height: calc(var(--task-row-h) - 6px);
+      font-size: clamp(16px, calc(var(--task-row-h) * 0.34), 24px);
+      line-height: 1;
+      padding: 0 16px 10px 2px;
+    }
+    .t-row > div.num.task-cell-unit input.task-man {
+      padding-right: 26px;
+    }
+    .t-row > div.num.task-cell-unit input.task-hours {
+      padding-right: 16px;
+    }
+    /*
+     * 単位「人工」「ｈ」：作業員の「ｈ」と同様に .task-unit-input-wrap::after（入力値には含めず、右下オーバーレイ）。
+     * PDF クローンで input が span になるため :has(.task-man) ではなく列順 nth-child で content を振る。
+     */
+    .t-row > div.num.task-cell-unit .task-unit-input-wrap::after {
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      font-size: clamp(7px, calc(var(--task-row-h) * 0.12), 11px);
+      line-height: 1;
+      pointer-events: none;
+      color: #222;
+      display: block;
+      text-align: right;
+      z-index: 2;
+    }
+    .t-row > div.num.task-cell-unit:nth-child(2) .task-unit-input-wrap::after {
+      content: "人工";
+    }
+    .t-row > div.num.task-cell-unit:nth-child(3) .task-unit-input-wrap::after {
+      content: "ｈ";
+    }
+    /* 作業員早・残：単位「ｈ」はラッパー疑似要素（入力値には含めず、右下オーバーレイ） */
+    .w-ot-input-wrap::after {
+      content: "ｈ";
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      font-size: clamp(7px, calc(var(--worker-row-h) * 0.12), 11px);
+      line-height: 1;
+      pointer-events: none;
+      color: #222;
+      display: block;
+      text-align: right;
+      z-index: 2;
+    }
+
+    .remarks {
+      border-bottom: 1px solid var(--line);
+      min-height: 250px;
+    }
+    .remarks-list {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      min-width: 0;
+    }
+    .remarks-title { height: 30px; border-bottom: 0; padding: 3px 6px; font-weight: 700; font-size: 18px; }
+    .remarks-list .r-row {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      min-height: var(--remark-row-h);
+      border-bottom: 0;
+      /* 横は詰めて textarea の入力領域を右寄せ（+ は absolute のまま） */
+      padding: 0 2px;
+      position: relative;
+      overflow: visible;
+    }
+    .remarks-list textarea {
+      width: 100%;
+      min-height: 0;
+      max-height: 100%;
+      border: 0;
+      resize: none;
+      background: transparent;
+      /* 行高 --remark-row-h（adjustDensity：作業員・作業と同じ workerRefPx） */
+      font-size: clamp(15px, calc(var(--remark-row-h) * 0.34), 22px);
+      line-height: 1.3;
+      padding: 6px 4px;
+      flex: 1 1 auto;
+      box-sizing: border-box;
+    }
+    /* 備考：マウント前は .remarks 直下に置くが非表示 */
+    .remarks > .workers-add-row {
+      display: none !important;
+    }
+    /* 最終行の備考欄内に + を右詰め */
+    .remarks-list .r-row .workers-add-row {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      bottom: auto;
+      transform: translateY(-50%);
+      display: flex !important;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 0;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .remarks-list .r-row .workers-add-btn {
+      --add-btn-size: min(60px, max(30px, calc(var(--remark-row-h) - 2px)));
+      width: var(--add-btn-size);
+      height: var(--add-btn-size);
+      min-width: var(--add-btn-size);
+      min-height: var(--add-btn-size);
+      border-width: 1px;
+      border-color: #c5cad3;
+      color: #1565e6;
+      font-size: 0;
+      line-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
+    }
+    .remarks-list .r-row .workers-add-btn .workers-add-plus {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 82%;
+      height: 82%;
+      max-width: 100%;
+      max-height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      color: inherit;
+      flex: 0 0 auto;
+    }
+    .remarks-list .r-row .workers-add-btn .workers-add-plus-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    .remarks-list .r-row .workers-add-btn:hover {
+      color: #0d47c4;
+      border-color: #b8bdc7;
+      background: rgba(255, 255, 255, 0.98);
+    }
+
+    .footer {
+      height: 120px;
+      display: grid;
+      grid-template-columns: 1fr 354px;
+      align-items: start;
+      border: 0;
+      padding: 4px 12px 0 12px;
+    }
+    /* 上から社名・住所・TEL。親ブロック幅＝住所1行の幅（syncFooterColWidth）。子は100% */
+    .footer > div:first-child {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      max-width: 100%;
+      min-width: 0;
+      align-self: start;
+      box-sizing: border-box;
+    }
+    .footer .company {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      margin: 0 0 -10px 0;
+      padding: 4px 0 0 0;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      line-height: 1;
+      text-align: justify;
+      text-align-last: justify;
+      text-justify: inter-character;
+    }
+    .footer .company::after {
+      content: "";
+      display: inline-block;
+      width: 100%;
+      height: 0;
+      line-height: 0;
+      font-size: 0;
+      vertical-align: bottom;
+      /* 両端寄せ用疑似行。下方向の余白を詰めて住所に近づける */
+      margin-bottom: -0.78em;
+    }
+    .footer-line-addr,
+    .footer-line-tel {
+      font-size: 19px;
+      font-weight: 500;
+      line-height: 1.02;
+      letter-spacing: 0.5px;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      padding: 0;
+    }
+    .footer-line-addr {
+      margin: -10px 0 0 0;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .footer-line-tel {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      align-items: baseline;
+      align-self: stretch;
+      gap: 0;
+      width: 100%;
+      min-width: 0;
+      margin: 4px 0 0 0;
+      white-space: nowrap;
+    }
+    .footer-line-tel .footer-tel-l,
+    .footer-line-tel .footer-tel-r {
+      flex: 0 0 auto;
+    }
+    .footer .right-box {
+      width: 100%;
+      height: 100%;
+      min-height: 96px;
+      align-self: stretch;
+      border: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 6px 4px 6px 0;
+      box-sizing: border-box;
+    }
+    .footer-logo-wrap {
+      width: 100%;
+      height: 100%;
+      max-height: 112px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      border: 0;
+      background: transparent;
+      box-sizing: border-box;
+    }
+    .footer-logo-wrap.has-img {
+      background: transparent;
+    }
+    .footer-logo-default {
+      width: auto;
+      max-width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .footer-logo-default svg {
+      width: auto;
+      max-width: 100%;
+      height: auto;
+      max-height: 88px;
+      display: block;
+    }
+    .footer-logo-wrap.has-img .footer-logo-default {
+      display: none;
+    }
+    .footer-logo {
+      display: none;
+      width: auto;
+      max-width: 100%;
+      height: auto;
+      max-height: 88px;
+      object-fit: contain;
+      object-position: left center;
+    }
+    .footer-logo-wrap.has-img .footer-logo {
+      display: block;
+    }
+
+    .sig-modal {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .sig-modal.active { display: flex; }
+    .sig-body {
+      width: min(96vw, 980px);
+      height: min(90vh, 700px);
+      background: #fff;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .sig-title { padding: 10px; border-bottom: 1px solid #ddd; font-weight: 700; }
+    #signatureCanvas { width: 100%; height: 100%; touch-action: none; background: #fff; }
+    .sig-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px; border-top: 1px solid #ddd; }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 6mm 14mm 6mm 14mm;
+      }
+      body { background: #fff; }
+      .toolbar { display: none; }
+      .workers-add-row { display: none !important; }
+      .app, .paper-wrap { margin: 0; padding: 0; border: 0; }
+      /* A4 から @page 余白を除いた内側（上6・下6・左右14） */
+      #paper { width: 182mm; min-height: 285mm; box-sizing: border-box; }
+    }
+    .pdf-render .stamp-cell {
+      grid-template-rows: auto 1fr;
+    }
+    .pdf-render .stamp-preview {
+      flex: 1;
+      min-height: 88px;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 4px;
+    }
+    .pdf-render .stamp-sign-slot {
+      border: 0 !important;
+      background: transparent !important;
+      padding: 2px !important;
+      min-height: 0 !important;
+    }
+    body.pdf-render #paper .workers-add-row,
+    body.pdf-render #paper .workers-add-btn {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+    /*
+     * PDF：作業員が偶数かつ12名以上で data-pdf-worker-col-lock。
+     * #wLeft/#wRight のデータ列高を 6×ref に固定（ref は常に「12相当」の密度。作業・備考の段数では変えない）。
+     * 作業員人数だけ flex で均等割り。12名超のみ data-pdf-worker-compress。
+     */
+    /* グリッドは stretch（各セルが行高いっぱい）でないと border-right の縦線が欠ける */
+    body.pdf-render #paper .w-head,
+    body.pdf-render #paper .w-row {
+      display: grid !important;
+      grid-template-columns: 34px 1fr var(--col-contract) !important;
+      align-items: stretch !important;
+    }
+    body.pdf-render #paper .w-head > div,
+    body.pdf-render #paper .w-row > div {
+      border-right: 1px solid var(--line) !important;
+      box-sizing: border-box !important;
+    }
+    body.pdf-render #paper .w-head > div:last-child,
+    body.pdf-render #paper .w-row > div:last-child {
+      border-right: 0 !important;
+    }
+    body.pdf-render #paper .w-row {
+      min-height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
+      /* 行の実高を確定させないと子の height:100% が効かず、氏名・早残が上詰めに見える（html2canvas 含む） */
+      height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
+    }
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] .workers-inner > .half {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wLeft,
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 0 0 auto !important;
+      height: var(--pdf-workers-col-data-h) !important;
+      min-height: var(--pdf-workers-col-data-h) !important;
+      max-height: var(--pdf-workers-col-data-h) !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wLeft .w-row,
+    body.pdf-render #paper[data-pdf-worker-col-lock="1"] #wRight .w-row {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      box-sizing: border-box !important;
+    }
+    /*
+     * html2canvas クローン: body に pdf-render が無いときも、作業員左右列の flex 均等行と同じにする
+     *（無いと .w-row の実高が潰れ、氏名・早残が上詰めに見える）。
+     */
+    #paper[data-pdf-worker-col-lock="1"] .workers-inner > .half {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] #wLeft,
+    #paper[data-pdf-worker-col-lock="1"] #wRight {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 0 0 auto !important;
+      height: var(--pdf-workers-col-data-h) !important;
+      min-height: var(--pdf-workers-col-data-h) !important;
+      max-height: var(--pdf-workers-col-data-h) !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] #wLeft .w-row,
+    #paper[data-pdf-worker-col-lock="1"] #wRight .w-row {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      box-sizing: border-box !important;
+    }
+    /*
+     * html2canvas のクローンで body に pdf-render が付かない場合でも、
+     * #paper に data-pdf-worker-* があれば作業員表のグリッド＋縦線を再現する。
+     */
+    #paper[data-pdf-worker-col-lock="1"] .w-head,
+    #paper[data-pdf-worker-col-lock="1"] .w-row,
+    #paper[data-pdf-worker-compress="1"] .w-head,
+    #paper[data-pdf-worker-compress="1"] .w-row {
+      display: grid !important;
+      grid-template-columns: 34px 1fr var(--col-contract) !important;
+      align-items: stretch !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] .w-head > div,
+    #paper[data-pdf-worker-col-lock="1"] .w-row > div,
+    #paper[data-pdf-worker-compress="1"] .w-head > div,
+    #paper[data-pdf-worker-compress="1"] .w-row > div {
+      border-right: 1px solid var(--line) !important;
+      box-sizing: border-box !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] .w-head > div:last-child,
+    #paper[data-pdf-worker-col-lock="1"] .w-row > div:last-child,
+    #paper[data-pdf-worker-compress="1"] .w-head > div:last-child,
+    #paper[data-pdf-worker-compress="1"] .w-row > div:last-child {
+      border-right: 0 !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] .w-row,
+    #paper[data-pdf-worker-compress="1"] .w-row {
+      min-height: var(--pdf-worker-row-h) !important;
+      height: var(--pdf-worker-row-h) !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] .w-row > div:nth-child(2),
+    #paper[data-pdf-worker-compress="1"] .w-row > div:nth-child(2) {
+      align-items: stretch !important;
+      justify-content: center !important;
+    }
+    #paper[data-pdf-worker-col-lock="1"] .w-row .name-wrap,
+    #paper[data-pdf-worker-compress="1"] .w-row .name-wrap {
+      display: flex !important;
+      flex-direction: column !important;
+      align-self: stretch !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      width: 100% !important;
+    }
+    /* html2canvas クローン用：氏名は画面と同じ字サイズ。縦位置は PDF のみ line-height ≒ 行内寸で中央 */
+    #paper[data-pdf-worker-col-lock="1"] .w-row .name-wrap .worker-name,
+    #paper[data-pdf-worker-compress="1"] .w-row .name-wrap .worker-name {
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-height: none !important;
+      display: block !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      font-size: clamp(14px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.27), 28px) !important;
+      line-height: max(1.3em, calc(var(--pdf-worker-row-h, var(--worker-row-h)) - 3px)) !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .t-row {
+      min-height: var(--task-row-h) !important;
+    }
+    /*
+     * PDF(html2canvas): 枠線位置はそのまま。会社名・現場名・作業内容は縦中央。作業員氏名・早・残は字サイズは画面に合わせつつ PDF では行内で縦中央。
+     */
+    body.pdf-render #paper .title-row {
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .w-row > div:nth-child(2) {
+      align-items: stretch !important;
+      justify-content: center !important;
+    }
+    body.pdf-render #paper .w-row .name-wrap {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+    body.pdf-render #paper .w-row .name-wrap .worker-name {
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      display: block !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      font-size: clamp(14px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.27), 28px) !important;
+      line-height: max(1.3em, calc(var(--pdf-worker-row-h, var(--worker-row-h)) - 3px)) !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .w-row > div.w-ot-cell,
+    #paper[data-pdf-worker-col-lock="1"] .w-row > div.w-ot-cell,
+    #paper[data-pdf-worker-compress="1"] .w-row > div.w-ot-cell {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      overflow: visible !important;
+    }
+    /*
+     * PDF 作業員早・残：ラッパーを行高いっぱいにし列内で縦中央。数字は flex＋padding（「ｈ」は ::after）
+     */
+    body.pdf-render #paper .w-ot-input-wrap,
+    #paper[data-pdf-worker-col-lock="1"] .w-ot-input-wrap,
+    #paper[data-pdf-worker-compress="1"] .w-ot-input-wrap {
+      position: relative !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .w-ot-input-wrap::after,
+    #paper[data-pdf-worker-col-lock="1"] .w-ot-input-wrap::after,
+    #paper[data-pdf-worker-compress="1"] .w-ot-input-wrap::after {
+      content: "ｈ" !important;
+      position: absolute !important;
+      right: 2px !important;
+      bottom: 2px !important;
+      font-size: clamp(7px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.12), 11px) !important;
+      line-height: 1 !important;
+      pointer-events: none !important;
+      color: #222 !important;
+      display: block !important;
+      text-align: right !important;
+      z-index: 2 !important;
+    }
+    /* PDF 作業員早・残：列ロック時の行高（--pdf-worker-row-h、未設定時は --worker-row-h）に連動 */
+    body.pdf-render #paper .w-row .w-ot-cell .ot,
+    #paper[data-pdf-worker-col-lock="1"] .w-row .w-ot-cell .ot,
+    #paper[data-pdf-worker-compress="1"] .w-row .w-ot-cell .ot {
+      position: relative !important;
+      z-index: 1 !important;
+      overflow: visible !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      margin: 0 !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      /* PDF：下だけ広げないと数字が上に寄る。単位「ｈ」は ::after で右下 */
+      padding: 2px 6px 2px 2px !important;
+      box-sizing: border-box !important;
+      text-align: center !important;
+      line-height: 1 !important;
+      font-variant-numeric: tabular-nums !important;
+      font-weight: 700 !important;
+      font-size: clamp(15px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.30), 30px) !important;
+    }
+    /* 12名超の圧縮時のみ：早・残セルが狭い行高でも破綻しにくいよう最小限調整（ヘッダー等は変更しない） */
+    body.pdf-render #paper[data-pdf-worker-compress="1"] .w-row > div:first-child {
+      font-size: clamp(9px, calc(var(--pdf-worker-row-h) * 0.32), 13px) !important;
+    }
+    body.pdf-render #paper[data-pdf-worker-compress="1"] .w-row > div.w-ot-cell {
+      padding: 1px 2px 2px !important;
+    }
+    body.pdf-render #paper[data-pdf-worker-compress="1"] .w-row .w-ot-cell .ot {
+      padding: 2px 6px 2px 2px !important;
+    }
+    /*
+     * html2canvas クローン: body.pdf-render が効かないときも、氏名・早・残は PDF 用の縦中央と同じ。
+     * data-pdf-capture は PDF キャプチャ中のみ #paper に付与（createPdfFile）。
+     */
+    #paper[data-pdf-capture="1"] .w-row > div:nth-child(2) {
+      align-items: stretch !important;
+      justify-content: center !important;
+    }
+    #paper[data-pdf-capture="1"] .w-row .name-wrap {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+    #paper[data-pdf-capture="1"] .w-row .name-wrap .worker-name {
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      display: block !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      font-size: clamp(14px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.27), 28px) !important;
+      line-height: max(1.3em, calc(var(--pdf-worker-row-h, var(--worker-row-h)) - 3px)) !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    #paper[data-pdf-capture="1"] .w-row {
+      min-height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
+      height: var(--pdf-worker-row-h, var(--worker-row-h)) !important;
+    }
+    #paper[data-pdf-capture="1"] .w-row > div.w-ot-cell {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      overflow: visible !important;
+    }
+    #paper[data-pdf-capture="1"] .w-ot-input-wrap {
+      position: relative !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+    }
+    #paper[data-pdf-capture="1"] .w-ot-input-wrap::after {
+      content: "ｈ" !important;
+      position: absolute !important;
+      right: 2px !important;
+      bottom: 2px !important;
+      font-size: clamp(7px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.12), 11px) !important;
+      line-height: 1 !important;
+      pointer-events: none !important;
+      color: #222 !important;
+      display: block !important;
+      text-align: right !important;
+      z-index: 2 !important;
+    }
+    #paper[data-pdf-capture="1"] .w-row .w-ot-cell .ot {
+      position: relative !important;
+      z-index: 1 !important;
+      overflow: visible !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      margin: 0 !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      padding: 2px 6px 2px 2px !important;
+      box-sizing: border-box !important;
+      text-align: center !important;
+      line-height: 1 !important;
+      font-variant-numeric: tabular-nums !important;
+      font-weight: 700 !important;
+      font-size: clamp(15px, calc(var(--pdf-worker-row-h, var(--worker-row-h)) * 0.30), 30px) !important;
+    }
+    #paper[data-pdf-capture="1"][data-pdf-worker-compress="1"] .w-row > div.w-ot-cell {
+      padding: 1px 2px 2px !important;
+    }
+    #paper[data-pdf-capture="1"][data-pdf-worker-compress="1"] .w-row .w-ot-cell .ot {
+      padding: 2px 6px 2px 2px !important;
+    }
+    body.pdf-render #paper .company-cell {
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .company-row-plain {
+      /* stretch だと .field が行高いっぱいに伸び、文字が縦に寄らない。PDF では行内で縦中央 */
+      align-items: center !important;
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .company-row-plain .label,
+    body.pdf-render #paper .company-row-plain .sama {
+      align-self: center !important;
+    }
+    body.pdf-render #paper .company-cell .company-row-plain .field {
+      align-self: center !important;
+      height: auto !important;
+      line-height: 1.25 !important;
+      padding: 2px 4px !important;
+    }
+    body.pdf-render #paper .company-row-plain .header-field-pdf-value {
+      display: flex !important;
+      align-items: center !important;
+      align-self: center !important;
+      line-height: 1.25 !important;
+      padding: 2px 4px !important;
+    }
+    body.pdf-render #paper .summary-cell {
+      overflow: visible !important;
+    }
+    body.pdf-render #paper .summary-val {
+      overflow: visible !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+    }
+    body.pdf-render #paper .summary-total-input-wrap {
+      position: relative !important;
+      flex: 1 1 auto !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      max-width: none !important;
+    }
+    body.pdf-render #paper .summary-val input,
+    body.pdf-render #paper .summary-total-input-wrap .summary-total-pdf-value {
+      flex: 1 1 auto !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      padding: 0 26px !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      line-height: normal !important;
+    }
+    body.pdf-render #paper .summary-total-input-wrap .unit {
+      position: absolute !important;
+      width: 1.55em !important;
+      height: 1.55em !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      right: 2px !important;
+      bottom: 2px !important;
+      font-size: 14px !important;
+      line-height: 1 !important;
+      font-weight: 600 !important;
+      pointer-events: none !important;
+      color: #222 !important;
+    }
+    body.pdf-render #paper .t-row > div.task-main-cell {
+      align-items: stretch !important;
+    }
+    body.pdf-render #paper .t-row .task-dual {
+      align-self: stretch !important;
+      flex: 1 1 auto !important;
+      height: 100% !important;
+      max-height: none !important;
+      align-items: center !important;
+    }
+    body.pdf-render #paper .t-row .task-dual input.task-type,
+    body.pdf-render #paper .t-row .task-dual input.task-sector,
+    body.pdf-render #paper .t-row .task-dual input.task-detail {
+      align-self: center !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: calc(var(--task-row-h) - 8px) !important;
+      padding: 4px 6px !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+      line-height: 1.25 !important;
+      font-size: clamp(15px, calc(var(--task-row-h) * 0.28), 20px) !important;
+    }
+    body.pdf-render #paper .t-row .task-dual input.task-type,
+    body.pdf-render #paper .t-row .task-dual input.task-sector {
+      text-align: center !important;
+    }
+    body.pdf-render #paper .t-row .task-dual input.task-detail {
+      text-align: left !important;
+    }
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input {
+      overflow: visible !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      padding: 0 16px 11px 2px !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      line-height: normal !important;
+    }
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-man {
+      padding-right: 26px !important;
+    }
+    body.pdf-render #paper .t-row > div.num.task-cell-unit input.task-hours {
+      padding-right: 16px !important;
+    }
+    /* 作業内容6行以上（PDF）: #taskRows 固定高＋均等行。合計は常に 6×ref（作業段数では ref を変えず、行数だけ均等割り） */
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] .tasks {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows {
+      display: grid !important;
+      grid-auto-rows: minmax(0, 1fr) !important;
+      height: var(--pdf-tasks-col-data-h) !important;
+      min-height: var(--pdf-tasks-col-data-h) !important;
+      max-height: var(--pdf-tasks-col-data-h) !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row {
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      box-sizing: border-box !important;
+      align-self: stretch !important;
+      overflow: hidden !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div {
+      align-items: stretch !important;
+      justify-content: center !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+    /* 請負・常庸（4列目）: 行高 --pdf-task-row-h に合わせて「請」「常」〇と中黒を小さくする（作業行が増えるほど行が低い） */
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4),
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4) {
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: clamp(9px, calc(var(--pdf-task-row-h) * 0.33), 14px) !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div:nth-child(4),
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div:nth-child(4) {
+      font-size: clamp(7px, calc(var(--pdf-task-row-h) * 0.30), 11px) !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4) .circled,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4) .circled {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 1.68em !important;
+      height: 1.68em !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      line-height: 1 !important;
+      font-size: inherit !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4) .circled.active::after,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div:nth-child(4) .circled.active::after {
+      inset: -0.2em !important;
+      border-radius: 50% !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.task-main-cell {
+      min-width: 0 !important;
+      justify-content: center !important;
+      align-items: stretch !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual {
+      flex: 1 1 auto !important;
+      align-items: center !important;
+      justify-content: center !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-type,
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-sector,
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-detail,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-type,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-sector,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual input.task-detail {
+      max-height: calc(var(--pdf-tasks-col-data-h) / var(--pdf-task-rows-count) - 8px) !important;
+      font-size: clamp(14px, calc(var(--pdf-task-row-h) * 0.35), 22px) !important;
+    }
+    /* 作業11行以上：行高が狭いので区分・工区・詳細は一段小さく（見切れ対策） */
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-type,
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-sector,
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-detail,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-type,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-sector,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-dual input.task-detail {
+      max-height: none !important;
+      font-size: clamp(10px, calc(var(--pdf-task-row-h) * 0.30), 12px) !important;
+      line-height: 1.15 !important;
+      padding: 0 2px !important;
+      overflow: visible !important;
+      color: #222 !important;
+      -webkit-text-fill-color: #222 !important;
+    }
+    /*
+     * PDF クローンのみ（11段以上）: 区分・工区・詳細を span にしたとき用。
+     * html2canvas は小さい input の文字が欠けたり真っ白になることがあるため onclone で差し替える。
+     */
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-type-pdf-value,
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-sector-pdf-value,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-type-pdf-value,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-sector-pdf-value {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      font-size: clamp(10px, calc(var(--pdf-task-row-h) * 0.30), 12px) !important;
+      line-height: 1.15 !important;
+      font-weight: 400 !important;
+      color: #222 !important;
+      padding: 0 2px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-detail-pdf-value,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-detail-pdf-value {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      font-size: clamp(10px, calc(var(--pdf-task-row-h) * 0.30), 12px) !important;
+      line-height: 1.15 !important;
+      font-weight: 400 !important;
+      color: #222 !important;
+      padding: 0 2px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit {
+      padding: 1px 3px min(10px, calc(var(--pdf-task-row-h) * 0.17)) !important;
+      overflow: visible !important;
+      justify-content: center !important;
+      align-items: center !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit input {
+      padding: calc(var(--pdf-task-row-h) * 0.07) 2px 1px !important;
+      font-size: min(22px, calc(var(--pdf-task-row-h) * 0.44)) !important;
+      height: 100% !important;
+      max-height: none !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      line-height: normal !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit .task-unit-input-wrap::after {
+      font-size: min(9px, calc(var(--pdf-task-row-h) * 0.2)) !important;
+      bottom: 1px !important;
+      right: 2px !important;
+    }
+    /* 作業11段以上（PDF）: 行高が極小でも数字の下が欠けないようさらに詰める（max-height は外し flex でセル内に収める） */
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div.num.task-cell-unit {
+      padding: 0 2px min(6px, calc(var(--pdf-task-row-h) * 0.11)) !important;
+      overflow: visible !important;
+      justify-content: center !important;
+      align-items: center !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div.num.task-cell-unit input,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div.num.task-cell-unit input {
+      padding: calc(var(--pdf-task-row-h) * 0.03) 2px 1px !important;
+      font-size: min(14px, calc(var(--pdf-task-row-h) * 0.36)) !important;
+      max-height: none !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      line-height: normal !important;
+    }
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row > div.num.task-cell-unit .task-unit-input-wrap::after {
+      font-size: min(6px, calc(var(--pdf-task-row-h) * 0.14)) !important;
+      bottom: 0 !important;
+      right: 1px !important;
+    }
+    /* html2canvas クローン用: 作業欄・人工ｈの縦位置を揃える（body 非依存） */
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.task-main-cell {
+      justify-content: center !important;
+      align-items: stretch !important;
+      min-width: 0 !important;
+    }
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-dual {
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    /* html2canvas クローンで body.pdf-render が無いとき #paper 起点でも作業欄の人工・ｈを揃える */
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit {
+      padding: 1px 3px min(10px, calc(var(--pdf-task-row-h) * 0.17)) !important;
+      overflow: visible !important;
+      justify-content: center !important;
+      align-items: center !important;
+    }
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit input {
+      padding: calc(var(--pdf-task-row-h) * 0.07) 2px 1px !important;
+      font-size: min(22px, calc(var(--pdf-task-row-h) * 0.44)) !important;
+      height: 100% !important;
+      max-height: none !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      box-sizing: border-box !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      line-height: normal !important;
+    }
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row > div.num.task-cell-unit .task-unit-input-wrap::after {
+      font-size: min(9px, calc(var(--pdf-task-row-h) * 0.2)) !important;
+      bottom: 1px !important;
+      right: 2px !important;
+    }
+    /* 人工・ｈ：入力枠を左へ拡げ（画面と同じ）。PDF クローンも body 属性の有無に依存せず適用 */
+    body.pdf-render #paper .t-row .task-unit-input-wrap,
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-unit-input-wrap,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-unit-input-wrap {
+      margin-left: -14px !important;
+      width: calc(100% + 14px) !important;
+      max-width: none !important;
+      z-index: 1 !important;
+      box-sizing: border-box !important;
+    }
+    /* PDF クローンのみ: 人工・ｈ input→.task-pdf-num 置換後の見た目（body 非依存） */
+    #paper[data-pdf-task-col-lock="1"] #taskRows .t-row .task-pdf-num {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      text-align: center !important;
+      font-weight: 700 !important;
+      font-variant-numeric: tabular-nums !important;
+      line-height: normal !important;
+      font-size: min(22px, calc(var(--pdf-task-row-h) * 0.44)) !important;
+      padding: calc(var(--pdf-task-row-h) * 0.07) 2px 1px !important;
+      color: #222 !important;
+    }
+    body.pdf-render #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-pdf-num,
+    #paper[data-pdf-task-col-lock="1"][data-pdf-task-num-dense="1"] #taskRows .t-row .task-pdf-num {
+      font-size: min(14px, calc(var(--pdf-task-row-h) * 0.36)) !important;
+      padding: calc(var(--pdf-task-row-h) * 0.03) 2px 1px !important;
+      flex: 1 1 auto !important;
+      height: 100% !important;
+      min-height: 0 !important;
+    }
+    body.pdf-render #paper .remarks-list .r-row {
+      min-height: var(--remark-row-h) !important;
+      align-items: stretch !important;
+      justify-content: center !important;
+    }
+    body.pdf-render #paper .remarks-list textarea {
+      flex: 1 1 auto !important;
+      min-height: calc(var(--remark-row-h) - 8px) !important;
+      max-height: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      box-sizing: border-box !important;
+      padding: 6px 4px !important;
+      font-size: clamp(15px, calc(var(--remark-row-h) * 0.34), 22px) !important;
+      line-height: 1.25 !important;
+    }
+    /* PDF のみ（createPdfFile が data-pdf-remark-col-lock を付与）: 備考 5×ref 固定・body 非依存でクローンにも効く */
+    #paper[data-pdf-remark-col-lock="1"] .remarks {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    #paper[data-pdf-remark-col-lock="1"] #remarkRows {
+      display: grid !important;
+      grid-auto-rows: minmax(0, 1fr) !important;
+      height: var(--pdf-remarks-col-data-h) !important;
+      min-height: var(--pdf-remarks-col-data-h) !important;
+      max-height: var(--pdf-remarks-col-data-h) !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+    #paper[data-pdf-remark-col-lock="1"] #remarkRows .r-row {
+      display: flex !important;
+      flex-direction: column !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      box-sizing: border-box !important;
+      align-self: stretch !important;
+      align-items: stretch !important;
+      overflow: hidden !important;
+      justify-content: center !important;
+    }
+    #paper[data-pdf-remark-col-lock="1"] #remarkRows .r-row textarea {
+      flex: 1 1 auto !important;
+      align-self: stretch !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      max-height: none !important;
+      height: 100% !important;
+      overflow: visible !important;
+      box-sizing: border-box !important;
+      resize: none !important;
+      line-height: 1.12 !important;
+      font-size: clamp(
+        11px,
+        calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.31),
+        18px
+      ) !important;
+      padding: min(5px, calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.06)) 4px !important;
+    }
+    /* 備考10段以上（PDF）: 行が低いとき文字が欠けないようフォント上限・係数をさらに下げる */
+    #paper[data-pdf-remark-col-lock="1"][data-pdf-remark-dense="1"] #remarkRows .r-row textarea {
+      line-height: 1.05 !important;
+      font-size: clamp(
+        9px,
+        calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.23),
+        15px
+      ) !important;
+      padding: min(3px, calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.04)) 3px !important;
+    }
+    /* 備考12段以上（PDF）: 1 行がさらに低く html2canvas で欠けやすいため dense より一段小さく */
+    #paper[data-pdf-remark-col-lock="1"][data-pdf-remark-dense="1"][data-pdf-remark-xdense="1"] #remarkRows .r-row textarea {
+      line-height: 1 !important;
+      font-size: clamp(
+        8px,
+        calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.175),
+        12px
+      ) !important;
+      padding: min(2px, calc(var(--pdf-remarks-col-data-h) / var(--pdf-remark-rows-count) * 0.028)) 2px !important;
+    }
+    /* PDF(html2canvas) でも年月日・数字を画面と同じ下詰め */
+    body.pdf-render #paper .title-row .date-inline {
+      align-items: flex-end !important;
+    }
+    body.pdf-render #paper .title-row .date-inline .date-ymd {
+      display: inline-flex !important;
+      align-items: flex-end !important;
+      line-height: 1 !important;
+      gap: 0 !important;
+    }
+    /*
+     * html2canvas の onclone でだけ input が span.date-pdf-value に置き換わる。
+     * body 外のクローンでも効くよう #paper 起点（画面にはこの span は無い）
+     */
+    #paper .title-row .date-inline .date-pdf-value {
+      box-sizing: border-box !important;
+      font-size: 30px !important;
+      font-weight: 700 !important;
+      font-variant-numeric: tabular-nums !important;
+      text-align: right !important;
+      white-space: nowrap !important;
+      padding: 0.12em 0.08em 0 0.08em !important;
+      margin: 0 !important;
+      /* 固定 height + hidden だと html2canvas で上下が欠けることがある */
+      min-height: 1.25em !important;
+      height: auto !important;
+      line-height: 1.08 !important;
+      display: inline-flex !important;
+      align-items: flex-end !important;
+      justify-content: flex-end !important;
+      overflow: visible !important;
+      border: 0 !important;
+      background: transparent !important;
+    }
+    #paper .title-row .date-inline .date-pdf-value.date-pdf-year {
+      width: 5.5ch !important;
+      min-width: 5.5ch !important;
+    }
+    #paper .title-row .date-inline .date-pdf-value.date-pdf-md {
+      width: 3.2ch !important;
+      min-width: 3.2ch !important;
+    }
+    .pdf-render .stamp-sign-slot-input {
+      display: none !important;
+    }
+    .pdf-render .stamp-sign-slot.has-signature {
+      overflow: hidden !important;
+      border-radius: 2px !important;
+    }
+    .pdf-render .stamp-sign-slot.has-signature #signImage {
+      border: 0 !important;
+      outline: 0 !important;
+      box-shadow: none !important;
+      position: relative !important;
+      left: auto !important;
+      top: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      display: block !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 72px !important;
+      max-height: 72px !important;
+      margin: 0 auto !important;
+      object-fit: contain !important;
+      object-position: center !important;
+      filter: none !important;
+    }
+    .field-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      pointer-events: none;
+    }
+    .field-sheet.active {
+      display: block;
+      /* パネル外＝オーバーレイでタップを拾い、サインと同様にキャンセル可能にする */
+      pointer-events: auto;
+    }
+    .field-sheet-backdrop {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: rgba(0, 0, 0, 0.35);
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .field-sheet-panel {
+      position: fixed;
+      z-index: 1;
+      width: 300px;
+      max-width: calc(100vw - 16px);
+      max-height: min(320px, 70vh);
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+      display: flex;
+      flex-direction: column;
+      padding: 10px 10px 12px;
+      pointer-events: auto;
+    }
+    .field-sheet-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
+    }
+    .field-sheet-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 12px 10px;
+      font-size: 15px;
+      border: 0;
+      border-bottom: 1px solid #e4e9f0;
+      background: #fff;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .field-sheet-item:active { background: #eef3fb; }
+
+    .lists-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 190;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 12px 16px 16px;
+      box-sizing: border-box;
+    }
+    .lists-modal.active {
+      display: flex;
+    }
+    .lists-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+    }
+    .lists-modal-panel {
+      position: relative;
+      z-index: 1;
+      width: min(520px, 100%);
+      max-height: min(calc(100vh - 24px), 640px);
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      pointer-events: auto;
+    }
+    .lists-modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e0e4ea;
+      font-weight: 700;
+      font-size: 17px;
+    }
+    .lists-modal-body {
+      padding: 10px 14px 14px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
+    }
+    /* 各リストタブ：入力～追加は固定、一覧だけスクロール */
+    .lists-modal-body.lists-modal-body--split {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+    .lists-modal-body--split .lists-modal-sticky {
+      flex-shrink: 0;
+      padding: 10px 14px 10px;
+      background: #fff;
+      border-bottom: 1px solid #e0e4ea;
+      z-index: 2;
+    }
+    .lists-modal-body--split .lists-modal-list-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 14px 14px;
+    }
+    .lists-modal-section {
+      margin-bottom: 16px;
+    }
+    .lists-modal-section:last-child {
+      margin-bottom: 0;
+    }
+    .lists-modal-section-title {
+      margin: 0 0 6px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #334155;
+    }
+    .lists-modal-empty {
+      margin: 0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .lists-modal-ul {
+      margin: 0;
+      padding: 0 0 0 1.1em;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .lists-modal-ul li {
+      margin: 3px 0;
+      word-break: break-word;
+    }
+    .lists-modal-ul.lists-modal-ul-rows {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    .lists-modal-ul-rows > .lists-modal-li-row {
+      margin: 0;
+    }
+    .lists-modal-li-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #e8ecf1;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .lists-modal-li-row:last-child {
+      border-bottom: 0;
+    }
+    .lists-modal-li-text {
+      flex: 1;
+      min-width: 0;
+      text-align: left;
+      word-break: break-word;
+    }
+    .lists-modal-li-del {
+      flex-shrink: 0;
+      align-self: center;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 2px 4px 10px;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      color: #3b7dd1;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .lists-modal-li-del:hover {
+      color: #2563eb;
+    }
+    .lists-modal-add-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+    .lists-modal-add-input {
+      flex: 1;
+      min-width: 160px;
+      font-family: inherit;
+      font-size: 15px;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+    .lists-modal-add-btn {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #3b7dd1;
+      background: #3b7dd1;
+      color: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .lists-modal-add-btn:hover {
+      filter: brightness(1.05);
+    }
+    .lists-modal-add-btn:active {
+      filter: brightness(0.95);
+    }
+    /* 作業員リストモーダル：他タブと同様、入力の右に「追加」（所属会社ラベルはこのブロックのみ） */
+    .lists-modal-worker-add {
+      margin-bottom: 0;
+      max-width: 100%;
+    }
+    .lists-modal-worker-add-row {
+      margin-bottom: 8px;
+    }
+    .lists-modal-worker-add-row:last-child {
+      margin-bottom: 0;
+    }
+    .lists-modal-worker-add-row .lists-modal-worker-add-label {
+      flex: 0 0 auto;
+      align-self: center;
+      min-width: 7.5em;
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+      white-space: nowrap;
+    }
+    .lists-modal-worker-add-row .lists-modal-add-input {
+      min-width: 100px;
+    }
+    .lists-modal-li-worker-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 0.35em;
+    }
+    .lists-modal-li-worker-co {
+      font-size: 13px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .lists-modal-li-worker-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .lists-modal-li-worker-yomi {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    @keyframes lists-modal-li-jump-flash {
+      0% {
+        background: rgba(59, 125, 209, 0.28);
+      }
+      40% {
+        background: rgba(59, 125, 209, 0.12);
+      }
+      100% {
+        background: transparent;
+      }
+    }
+    .lists-modal-li-row.lists-modal-li-jump-flash {
+      animation: lists-modal-li-jump-flash 1.05s ease-out 1;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="toolbar">
+      <button id="pdfBtn">PDF作成</button>
+      <button id="shareBtn">PCへ送信（共有）</button>
+      <button type="button" data-lists-tab="companies">会社名</button>
+      <button type="button" data-lists-tab="sites">現場名</button>
+      <button type="button" data-lists-tab="workers">作業員</button>
+      <button type="button" data-lists-tab="work">作業内容</button>
+    </div>
+
+    <div class="paper-wrap">
+      <div id="paper">
+        <div class="title-row">
+          <span class="title-main">作 業 証 明 書</span>
+          <div class="shift-toggle">
+            （<span id="shiftDay" class="circled active">日勤</span> ・ <span id="shiftNight" class="circled">夜勤</span>）
+          </div>
+          <div class="date-inline">
+            <span class="date-ymd">
+              <input id="year" maxlength="4" inputmode="numeric" />年
+              <input id="month" maxlength="2" inputmode="numeric" />月
+              <input id="day" maxlength="2" inputmode="numeric" />日
+            </span>
+            <span id="weekday" class="weekday-inline">( )</span>
+          </div>
+        </div>
+
+        <div class="paper-sheet-core">
+        <div class="header-grid">
+          <div class="header-cell company-cell">
+            <div class="company-row-plain">
+              <span class="label">会社名：</span>
+              <input id="companyName" class="field sheet-target" type="text" data-list-key="companies" readonly />
+              <span class="sama">様</span>
+            </div>
+            <div class="company-row-plain">
+              <span class="label">現場名：</span>
+              <input id="siteName" class="field sheet-target" type="text" data-list-key="sites" readonly />
+            </div>
+          </div>
+          <div class="header-cell summary-cell">
+            <div class="summary-head">総工数</div>
+            <div class="summary-val">
+              <div class="summary-total-input-wrap">
+                <input id="totalWorkers" readonly />
+                <span class="unit" aria-hidden="true">人</span>
+              </div>
+            </div>
+          </div>
+          <div class="header-cell summary-cell">
+            <div class="summary-head">早・残</div>
+            <div class="summary-val">
+              <div class="summary-total-input-wrap">
+                <input id="totalOvertime" readonly />
+                <span class="unit" aria-hidden="true">ｈ</span>
+              </div>
+            </div>
+          </div>
+          <div class="header-cell stamp-cell">
+            <div class="stamp-title">確 認 印</div>
+            <div class="stamp-preview">
+              <div id="stampSignSlot" class="stamp-sign-slot">
+                <input
+                  type="text"
+                  id="signSlotInput"
+                  class="stamp-sign-slot-input sheet-target"
+                  readonly
+                  data-list-key="_signature"
+                  tabindex="0"
+                  aria-label="サインを手書き入力"
+                  autocomplete="off"
+                  value=""
+                />
+                <img id="signImage" alt="" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="workers">
+          <div class="workers-inner">
+            <div class="half">
+              <div class="w-head"><div></div><div>氏　　名</div><div>早・残</div></div>
+              <div id="wLeft"></div>
+            </div>
+            <div class="half">
+              <div class="w-head"><div></div><div>氏　　名</div><div>早・残</div></div>
+              <div id="wRight"></div>
+            </div>
+          </div>
+          <div id="workersAddRow" class="workers-add-row">
+            <button
+              type="button"
+              id="addWorkerBtn"
+              class="workers-add-btn"
+              aria-label="作業員を2人追加"
+              title="作業員を2人追加"
+            >
+              <span class="workers-add-plus" aria-hidden="true">
+                <svg
+                  class="workers-add-plus-svg"
+                  viewBox="0 0 100 100"
+                  xmlns="http://www.w3.org/2000/svg"
+                  focusable="false"
+                >
+                  <line x1="50" y1="18" x2="50" y2="82" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                  <line x1="18" y1="50" x2="82" y2="50" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="tasks">
+          <div class="t-head">
+            <div class="t-head-merge">作業内容</div>
+            <div class="t-head-pad" aria-hidden="true"></div>
+            <div class="t-head-pad" aria-hidden="true"></div>
+            <div>請負・常庸</div>
+          </div>
+          <div id="taskRows"></div>
+          <div id="tasksAddRow" class="workers-add-row">
+            <button
+              type="button"
+              id="addTaskBtn"
+              class="workers-add-btn"
+              aria-label="作業内容を1行追加"
+              title="作業内容を1行追加"
+            >
+              <span class="workers-add-plus" aria-hidden="true">
+                <svg
+                  class="workers-add-plus-svg"
+                  viewBox="0 0 100 100"
+                  xmlns="http://www.w3.org/2000/svg"
+                  focusable="false"
+                >
+                  <line x1="50" y1="18" x2="50" y2="82" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                  <line x1="18" y1="50" x2="82" y2="50" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="remarks">
+          <div class="remarks-title">備考：</div>
+          <div id="remarkRows" class="remarks-list"></div>
+          <div id="remarksAddRow" class="workers-add-row">
+            <button
+              type="button"
+              id="addRemarkBtn"
+              class="workers-add-btn"
+              aria-label="備考を1行追加"
+              title="備考を1行追加"
+            >
+              <span class="workers-add-plus" aria-hidden="true">
+                <svg
+                  class="workers-add-plus-svg"
+                  viewBox="0 0 100 100"
+                  xmlns="http://www.w3.org/2000/svg"
+                  focusable="false"
+                >
+                  <line x1="50" y1="18" x2="50" y2="82" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                  <line x1="18" y1="50" x2="82" y2="50" stroke="currentColor" stroke-width="11" stroke-linecap="round" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+        </div>
+
+        <div class="footer">
+          <div>
+            <div class="company">株式会社　後大建設</div>
+            <div class="footer-line-addr">〒262-0032 千葉市花見川区幕張町5-417-133</div>
+            <div class="footer-line-tel">
+              <span class="footer-tel-l">TEL: 043-441-4603</span><span class="footer-tel-r">FAX: 043-441-4604</span>
+            </div>
+          </div>
+          <div class="right-box">
+            <div class="footer-logo-wrap" id="footerLogoWrap">
+              <div class="footer-logo-default" id="footerLogoDefault" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 52" preserveAspectRatio="xMidYMid meet" role="img">
+                  <title>GODAI inc.</title>
+                  <polygon points="26,5 48,26 26,47 4,26" fill="#0a0a0a" />
+                  <text x="26" y="33" text-anchor="middle" fill="#fff" font-family="Segoe UI,system-ui,Arial Black,sans-serif" font-weight="900" font-size="20">G</text>
+                  <text x="58" y="36" fill="#0a0a0a" font-family="Segoe UI,Impact,system-ui,sans-serif" font-weight="900" font-size="28" letter-spacing="0.12em">GODAI</text>
+                  <text x="318" y="36" fill="#0a0a0a" font-family="Segoe UI,Impact,system-ui,sans-serif" font-weight="800" font-size="13">inc.</text>
+                </svg>
+              </div>
+              <img id="footerCompanyLogo" class="footer-logo" alt="会社ロゴ" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <div id="fieldSheet" class="field-sheet" aria-hidden="true">
+    <div class="field-sheet-backdrop"></div>
+    <div class="field-sheet-panel">
+      <ul id="fieldSheetList" class="field-sheet-list"></ul>
+    </div>
+  </div>
+
+  <div id="listsModal" class="lists-modal" aria-hidden="true">
+    <div class="lists-modal-backdrop" aria-hidden="true"></div>
+    <div class="lists-modal-panel" role="dialog" aria-modal="true" aria-labelledby="listsModalTitle">
+      <div class="lists-modal-head">
+        <span id="listsModalTitle">会社名</span>
+        <button type="button" id="listsModalClose">閉じる</button>
+      </div>
+      <div id="listsModalBody" class="lists-modal-body"></div>
+    </div>
+  </div>
+
+  <div id="sigModal" class="sig-modal">
+    <div class="sig-body">
+      <div class="sig-title">確認印 手書き入力</div>
+      <canvas id="signatureCanvas"></canvas>
+      <div class="sig-actions">
+        <button id="sigClearBtn">消去</button>
+        <button id="sigCancelBtn">キャンセル</button>
+        <button id="sigSaveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script>
+    const LISTS_KEY = "work-cert-saved-items-v1";
+    const lists = { companies: [], sites: [], workers: [], workTypes: [], workSectors: [], workDetails: [] };
+    const DEFAULT_GRID_ROWS = { workerCount: 12, taskCount: 6, remarkCount: 5 };
+    const state = { ...DEFAULT_GRID_ROWS, signatureData: "", shift: "day" };
+    const wLeft = document.getElementById("wLeft");
+    const wRight = document.getElementById("wRight");
+    const taskRows = document.getElementById("taskRows");
+    const remarkRows = document.getElementById("remarkRows");
+
+    /** 読み用：全角カタカナ（ア〜ン）→ひらがな。既にひらがな・漢字等はそのまま */
+    function normalizeReadingKey(s) {
+      const t = String(s ?? "").trim();
+      if (!t) return "";
+      let out = "";
+      for (const ch of t) {
+        const c = ch.codePointAt(0);
+        if (c >= 0x30a1 && c <= 0x30f6) out += String.fromCodePoint(c - 0x60);
+        else out += ch;
+      }
+      return out;
+    }
+    function normalizeWorkerEntry(e) {
+      if (e && typeof e === "object" && !Array.isArray(e)) {
+        return {
+          company: String(e.company ?? "").trim(),
+          companyYomi: String(e.companyYomi ?? "").trim(),
+          name: String(e.name ?? "").trim(),
+          nameYomi: String(e.nameYomi ?? "").trim(),
+        };
+      }
+      const s = String(e ?? "").trim();
+      return { company: "", companyYomi: "", name: s, nameYomi: "" };
+    }
+    function formatWorkerEntry(e) {
+      const w = normalizeWorkerEntry(e);
+      if (w.company && w.name) return `${w.company}　${w.name}`;
+      return w.name || w.company || "";
+    }
+    function workersEqual(a, b) {
+      const A = normalizeWorkerEntry(a);
+      const B = normalizeWorkerEntry(b);
+      return A.company === B.company && A.name === B.name;
+    }
+    /** 文字列リストの重複（前後空白除き・完全一致）を除去 */
+    function dedupeStringList(arr) {
+      if (!Array.isArray(arr)) return [];
+      const out = [];
+      const seen = new Set();
+      for (const x of arr) {
+        const s = String(x ?? "").trim();
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        out.push(s);
+      }
+      return out;
+    }
+    /** 作業員は証明書に氏名のみ出すため、同一氏名は1件だけ残す（先勝ち） */
+    function dedupeWorkersList(arr) {
+      if (!Array.isArray(arr)) return [];
+      const out = [];
+      const seenName = new Set();
+      for (const e of arr) {
+        const w = normalizeWorkerEntry(e);
+        if (!w.name) continue;
+        if (seenName.has(w.name)) continue;
+        seenName.add(w.name);
+        out.push(w);
+      }
+      return out;
+    }
+    function migrateWorkersList() {
+      if (!Array.isArray(lists.workers)) lists.workers = [];
+      lists.workers = lists.workers.map((e) => normalizeWorkerEntry(e)).filter((w) => w.name || w.company);
+      lists.workers = dedupeWorkersList(lists.workers);
+    }
+    function loadLists() {
+      try {
+        const t = localStorage.getItem(LISTS_KEY);
+        if (t) Object.assign(lists, JSON.parse(t));
+      } catch (_) {}
+      lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+        pinToTop: COMPANY_PIN_TOP,
+        modalScriptOrder: true,
+      });
+      lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+      lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
+      lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
+      lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
+      migrateWorkersList();
+      persistWorkersSorted();
+      saveLists();
+      void warmModalListSortYomiCacheForStrings(collectAllModalListStringsForYomi())
+        .then(() => {
+          lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+            pinToTop: COMPANY_PIN_TOP,
+            modalScriptOrder: true,
+          });
+          lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+          lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
+          lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
+          lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
+          saveLists();
+        })
+        .catch(() => {});
+    }
+    function saveLists() {
+      try {
+        localStorage.setItem(LISTS_KEY, JSON.stringify(lists));
+      } catch (_) {}
+    }
+
+    /** ページ読込のたび：作業員12・作業内容6・備考5（追加した行数は保存しない） */
+    function resetGridRowsToDefault() {
+      try {
+        localStorage.removeItem("work-cert-grid-layout-v1");
+      } catch (_) {}
+      Object.assign(state, DEFAULT_GRID_ROWS);
+    }
+
+    const KANJI_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+    function stringHasKanji(s) {
+      return KANJI_RE.test(String(s ?? ""));
+    }
+    /** カタカナのみ→ひらがな。漢字は含まない想定のフォールバック用 */
+    function syncYomiKanaOnly(s) {
+      const t = String(s ?? "").trim();
+      if (!t) return "";
+      const y = normalizeReadingKey(t);
+      return y || t;
+    }
+    function normalizeKuroshiroReading(s) {
+      return String(s ?? "")
+        .trim()
+        .replace(/\u3000/g, " ")
+        .replace(/\s+/g, " ");
+    }
+
+    /** Kuroshiro + Kuromoji（辞書は初回 CDN 取得）。失敗時は kuroshiroInst === null で固定 */
+    let kuroshiroInst;
+    let kuroInflight = null;
+    async function ensureKuroshiro() {
+      if (kuroshiroInst !== undefined) return kuroshiroInst;
+      if (!kuroInflight) {
+        kuroInflight = (async () => {
+          try {
+            const [{ default: Kuroshiro }, { default: KuromojiAnalyzer }] = await Promise.all([
+              import("https://esm.sh/kuroshiro@1.2.0"),
+              import("https://esm.sh/kuroshiro-analyzer-kuromoji@1.1.0"),
+            ]);
+            const k = new Kuroshiro();
+            await k.init(
+              new KuromojiAnalyzer({
+                dictPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/",
+              }),
+            );
+            kuroshiroInst = k;
+            return k;
+          } catch (err) {
+            console.warn(
+              "Kuromoji/Kuroshiro の初期化に失敗しました（オフライン・ブロック時など）。読みはカタカナ→ひらがなのみの簡易変換にフォールバックします。",
+              err,
+            );
+            kuroshiroInst = null;
+            return null;
+          } finally {
+            kuroInflight = null;
+          }
+        })();
+      }
+      await kuroInflight;
+      return kuroshiroInst;
+    }
+    /**
+     * 所属会社・氏名の「読み」を自動補完。
+     * 漢字を含むときは Kuroshiro でひらがな読み、それ以外は全角カタカナ→ひらがな。
+     */
+    async function autoYomiFromDisplayAsync(s) {
+      const t = String(s ?? "").trim();
+      if (!t) return "";
+      if (!stringHasKanji(t)) return syncYomiKanaOnly(t);
+      const k = await ensureKuroshiro();
+      if (!k) return syncYomiKanaOnly(t);
+      try {
+        const raw = await k.convert(t, { to: "hiragana", mode: "normal" });
+        const out = normalizeKuroshiroReading(raw);
+        return out || syncYomiKanaOnly(t);
+      } catch (_) {
+        return syncYomiKanaOnly(t);
+      }
+    }
+
+    /** 会社名・現場・作業内容モーダル用：表記だけの ja-JP 比較だと漢字の音読みで順序が直感とずれるため、比較キーにひらがな読みをキャッシュする */
+    const modalListSortYomiCache = new Map();
+    async function warmModalListSortYomiCacheForStrings(strings) {
+      const uniq = [...new Set((strings || []).map((s) => String(s ?? "").trim()).filter(Boolean))];
+      for (const s of uniq) {
+        if (modalListSortYomiCache.has(s)) continue;
+        try {
+          const y = stringHasKanji(s) ? await autoYomiFromDisplayAsync(s) : syncYomiKanaOnly(s);
+          modalListSortYomiCache.set(s, String(y || "").trim() || s);
+        } catch (_) {
+          modalListSortYomiCache.set(s, syncYomiKanaOnly(s) || s);
+        }
+      }
+    }
+    async function warmModalListSortYomiCacheForTab(tabKey) {
+      const spec = LISTS_TAB_SPEC[tabKey];
+      if (!spec) return;
+      const acc = [];
+      for (const key of spec.keys) {
+        if (key === "workers") continue;
+        const arr = lists[key];
+        if (Array.isArray(arr)) acc.push(...arr);
+      }
+      await warmModalListSortYomiCacheForStrings(acc);
+    }
+    function collectAllModalListStringsForYomi() {
+      return [
+        ...(lists.companies || []),
+        ...(lists.sites || []),
+        ...(lists.workTypes || []),
+        ...(lists.workSectors || []),
+        ...(lists.workDetails || []),
+      ];
+    }
+
+    function workerReadingNeedsKuroRefresh(w) {
+      if (stringHasKanji(w.name)) {
+        const y = w.nameYomi;
+        if (!y || y === w.name || stringHasKanji(y)) return true;
+      }
+      if (w.company && stringHasKanji(w.company)) {
+        const y = w.companyYomi;
+        if (!y || y === w.company || stringHasKanji(y)) return true;
+      }
+      return false;
+    }
+    /** 既存データ：漢字表記なのに読みが未整備の行だけ Kuroshiro で読みを再計算して保存 */
+    async function refreshStoredWorkerReadingsFromKuroshiro() {
+      if (!lists.workers.length) return;
+      const need = lists.workers.some((e) => workerReadingNeedsKuroRefresh(normalizeWorkerEntry(e)));
+      if (!need) return;
+      const k = await ensureKuroshiro();
+      if (!k) return;
+      const uniqNames = [...new Set(lists.workers.map((e) => normalizeWorkerEntry(e).name).filter(Boolean))];
+      const uniqCos = [...new Set(lists.workers.map((e) => normalizeWorkerEntry(e).company).filter(Boolean))];
+      const nameToY = Object.create(null);
+      for (const n of uniqNames) {
+        nameToY[n] = await autoYomiFromDisplayAsync(n);
+      }
+      const coToY = Object.create(null);
+      for (const c of uniqCos) {
+        coToY[c] = await autoYomiFromDisplayAsync(c);
+      }
+      let changed = false;
+      for (const e of lists.workers) {
+        const w = normalizeWorkerEntry(e);
+        const nay = nameToY[w.name] ?? w.nameYomi;
+        const coy = w.company ? coToY[w.company] ?? w.companyYomi : "";
+        if (w.nameYomi !== nay || w.companyYomi !== coy) {
+          e.nameYomi = nay;
+          e.companyYomi = coy;
+          changed = true;
+        }
+      }
+      if (changed) {
+        persistWorkersSorted();
+        saveLists();
+      }
+    }
+
+    async function addWorkerIfNew(company, name) {
+      const co = String(company ?? "").trim();
+      const na = String(name ?? "").trim();
+      if (!na) return;
+      const nay = await autoYomiFromDisplayAsync(na);
+      const coy = co ? await autoYomiFromDisplayAsync(co) : "";
+      if (!Array.isArray(lists.workers)) lists.workers = [];
+      if (lists.workers.some((e) => normalizeWorkerEntry(e).name === na)) return;
+      lists.workers.push({ company: co, companyYomi: coy, name: na, nameYomi: nay });
+      persistWorkersSorted();
+      saveLists();
+    }
+    function removeWorker(val) {
+      if (!Array.isArray(lists.workers)) return;
+      const w =
+        typeof val === "object" && val !== null && ("name" in val || "company" in val)
+          ? normalizeWorkerEntry(val)
+          : normalizeWorkerEntry({ company: "", name: val });
+      const i = lists.workers.findIndex((e) => workersEqual(e, w));
+      if (i === -1) return;
+      lists.workers.splice(i, 1);
+      persistWorkersSorted();
+      saveLists();
+    }
+    async function addIfNew(key, val) {
+      if (!key || String(key).startsWith("_")) return;
+      if (key === "workers") {
+        const v = String(val || "").trim();
+        if (!v) return;
+        void addWorkerIfNew("", v).catch(() => {});
+        return;
+      }
+      const v = String(val || "").trim();
+      if (!v) return;
+      const arr = lists[key];
+      if (!Array.isArray(arr)) return;
+      if (!arr.includes(v)) {
+        arr.push(v);
+        await warmModalListSortYomiCacheForStrings([v]);
+        if (key === "companies") {
+          lists.companies = sortJapaneseStrings([...lists.companies], {
+            pinToTop: COMPANY_PIN_TOP,
+            modalScriptOrder: true,
+          });
+        } else if (key === "sites") {
+          lists.sites = sortJapaneseStrings([...lists.sites], { modalScriptOrder: true });
+        } else if (key === "workTypes") {
+          lists.workTypes = sortJapaneseStrings([...lists.workTypes], { modalScriptOrder: true });
+        } else if (key === "workSectors") {
+          lists.workSectors = sortJapaneseStrings([...lists.workSectors], { modalScriptOrder: true });
+        } else if (key === "workDetails") {
+          lists.workDetails = sortJapaneseStrings([...lists.workDetails], { modalScriptOrder: true });
+        }
+        saveLists();
+      }
+    }
+    function removeListItem(key, val) {
+      if (!key || String(key).startsWith("_")) return;
+      if (key === "workers") {
+        removeWorker(val);
+        return;
+      }
+      const v = String(val || "").trim();
+      if (!v) return;
+      const arr = lists[key];
+      if (!Array.isArray(arr)) return;
+      const i = arr.indexOf(v);
+      if (i === -1) return;
+      arr.splice(i, 1);
+      if (key === "workTypes" || key === "workSectors" || key === "workDetails") {
+        normalizeWorkContentListsPersisted();
+      } else {
+        saveLists();
+      }
+    }
+
+    /**
+     * 日本語並び用：Intl.Collator（1字比較・最終タイブレークにも使用）
+     */
+    const JP_SORT_COLLATOR = new Intl.Collator("ja-JP", { sensitivity: "base", usage: "sort", numeric: true });
+    const EN_SORT_COLLATOR = new Intl.Collator("en", { sensitivity: "base", usage: "sort", numeric: true });
+    const COMPANY_PIN_TOP = "後大建設";
+
+    /**
+     * ツールバー系モーダル／記入シートの文字列リスト用の先頭字ブロック。
+     * 0 = ひらがな・漢字（五十音系は ja-JP で） → 1 = カタカナ → 2 = 英字（半角・全角） → 3 = 数字・記号など
+     */
+    function toolbarModalPrimaryScriptTier(str) {
+      const s = String(str ?? "").trim();
+      if (!s) return 99;
+      const c = s.codePointAt(0);
+      if (c >= 0x3040 && c <= 0x309f) return 0;
+      const isKanji =
+        (c >= 0x4e00 && c <= 0x9fff) ||
+        (c >= 0x3400 && c <= 0x4dbf) ||
+        (c >= 0xf900 && c <= 0xfaff) ||
+        c === 0x3005 ||
+        c === 0x3006 ||
+        c === 0x3007;
+      if (isKanji) return 0;
+      if ((c >= 0x30a0 && c <= 0x30ff) || c === 0x30fc || (c >= 0xff66 && c <= 0xff9f)) return 1;
+      if ((c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)) return 2;
+      if ((c >= 0xff21 && c <= 0xff3a) || (c >= 0xff41 && c <= 0xff5a)) return 2;
+      return 3;
+    }
+
+    /** 先頭ブロック順のあと、ブロック内は ja-JP または英字用 Collator（漢字表記は読みキャッシュがあれば読み同士で比較） */
+    function compareToolbarModalStrings(a, b) {
+      const sa = String(a ?? "").trim();
+      const sb = String(b ?? "").trim();
+      const ta = toolbarModalPrimaryScriptTier(sa);
+      const tb = toolbarModalPrimaryScriptTier(sb);
+      if (ta !== tb) return ta - tb;
+      if (ta === 2) return EN_SORT_COLLATOR.compare(sa, sb);
+      const ya = modalListSortYomiCache.get(sa);
+      const yb = modalListSortYomiCache.get(sb);
+      if (ya != null && yb != null) {
+        return JP_SORT_COLLATOR.compare(ya, yb);
+      }
+      return JP_SORT_COLLATOR.compare(sa, sb);
+    }
+
+    /**
+     * 1文字の種別（各桁の並び: ひらがな＋漢字 → カタカナ → その他 ＝数値 0→1→2）
+     * - 漢字→読みに: 表記の漢字は読みキーで比較し、読みに残った漢字は **ひらがなと同じ先頭ブロック**（0）に寄せる。
+     * - ひらがな→カタカナ→その他: ひらがな(0)、カタカナ(1)、英数字・記号・スペース等(2)。
+     * 作業員・所属は **読み** をキーにするとよい（カタカナは normalizeReadingKey しない）。
+     */
+    function jpCharSortCategory(c) {
+      if (typeof c !== "number" || c < 0) return 2;
+      const isHiragana = c >= 0x3040 && c <= 0x309f;
+      if (isHiragana) return 0;
+      const isKanji =
+        (c >= 0x4e00 && c <= 0x9fff) ||
+        (c >= 0x3400 && c <= 0x4dbf) ||
+        (c >= 0xf900 && c <= 0xfaff) ||
+        c === 0x3005 ||
+        c === 0x3006 ||
+        c === 0x3007;
+      if (isKanji) return 0;
+      const isKatakana =
+        (c >= 0x30a0 && c <= 0x30ff) || c === 0x30fc || (c >= 0xff66 && c <= 0xff9f);
+      if (isKatakana) return 1;
+      return 2;
+    }
+
+    /**
+     * 文字列を「1文字目→2文字目→…」で比較（会社名・現場など表記のみのリスト用にも使用）。
+     * 各位置で 種別(ひらがな＋漢字→カタカナ→その他) を先に比べ、同種別ならその1字を ja-JP で比較。
+     * 前方一致なら短い方を先。
+     */
+    function compareCharsJapanLexico(a, b) {
+      const charsA = [...String(a ?? "").trim()];
+      const charsB = [...String(b ?? "").trim()];
+      const n = Math.max(charsA.length, charsB.length);
+      for (let i = 0; i < n; i++) {
+        const hasA = i < charsA.length;
+        const hasB = i < charsB.length;
+        if (!hasA && !hasB) return 0;
+        if (!hasA) return -1;
+        if (!hasB) return 1;
+        const ca = charsA[i].codePointAt(0);
+        const cb = charsB[i].codePointAt(0);
+        const ta = jpCharSortCategory(ca);
+        const tb = jpCharSortCategory(cb);
+        if (ta !== tb) return ta - tb;
+        const ch = JP_SORT_COLLATOR.compare(charsA[i], charsB[i]);
+        if (ch !== 0) return ch;
+      }
+      return 0;
+    }
+
+    /** 氏名：読みを並びキーに（全角カタカナは normalizeReadingKey しない）。読み未整備時は表記 */
+    function workerNameLexicoKeyFromEntry(entry) {
+      const w = normalizeWorkerEntry(entry);
+      const y = String(w.nameYomi || "").trim() || String(w.name || "").trim();
+      return y;
+    }
+    /** 氏名「表記」の先頭字種（ツールバー文字列と同じ 0→1→2→3）。並びの第1キーに使う */
+    function workerNameDisplayScriptTier(entry) {
+      const n = String(normalizeWorkerEntry(entry).name || "").trim();
+      return toolbarModalPrimaryScriptTier(n);
+    }
+    /**
+     * 同一所属内の氏名比較：先に **表記の先頭字種**（漢字・ひら／カタ／英字／その他）でブロック分け。
+     * 同じブロック内は **読み→なければ表記** を Collator のみで比較（読みがひらがなでも表記がカタならカタブロックに留まる）。
+     */
+    function compareWorkerNamesDisplayScriptThenYomi(a, b) {
+      const ta = workerNameDisplayScriptTier(a);
+      const tb = workerNameDisplayScriptTier(b);
+      if (ta !== tb) return ta - tb;
+      const ka = workerNameLexicoKeyFromEntry(a);
+      const kb = workerNameLexicoKeyFromEntry(b);
+      if (ta === 2) return EN_SORT_COLLATOR.compare(ka, kb);
+      return JP_SORT_COLLATOR.compare(ka, kb);
+    }
+    /** 所属キー（表記）：同じ所属の先頭レコードの companyYomi を読みに。無ければ表記（カタカナはそのまま） */
+    function companyKeyLexicoKeyFromMap(displayKey, byCo) {
+      const k = String(displayKey ?? "").trim();
+      if (!k) return "";
+      const ws = byCo.get(k);
+      const yomi = ws && ws.length ? normalizeWorkerEntry(ws[0]).companyYomi : "";
+      const y = String(yomi || "").trim() || k;
+      return y;
+    }
+
+    /**
+     * 後大建設「以外」の所属会社キー（表記）の並び。
+     * 比較は **読み** を 1文字目から字種ルールで比較（読みのカタカナはひらがな化しない）。空キー "" は常に最後。
+     */
+    function createShozokuCompanyComparator(byCo) {
+      return (a, b) => {
+        if (a === "" && b !== "") return 1;
+        if (b === "" && a !== "") return -1;
+        return compareCharsJapanLexico(companyKeyLexicoKeyFromMap(a, byCo), companyKeyLexicoKeyFromMap(b, byCo));
+      };
+    }
+
+    function sortJapaneseStrings(list, opts) {
+      const pin = opts?.pinToTop;
+      /** 五十音（ひら・漢字）→ カタカナ → アルファベット → その他、各ブロック内は Collator */
+      const modalScriptOrder = opts?.modalScriptOrder === true;
+      const trimmed = (list || []).map((s) => String(s).trim()).filter(Boolean);
+      const pinHits = pin ? trimmed.filter((s) => s === pin) : [];
+      const rest = pin ? trimmed.filter((s) => s !== pin) : [...trimmed];
+      if (modalScriptOrder) {
+        rest.sort(compareToolbarModalStrings);
+      } else {
+        rest.sort(compareCharsJapanLexico);
+      }
+      return [...pinHits, ...rest];
+    }
+
+    /** 作業内容（区分・工区・詳細）の保存配列をモーダルと同じルールで整列し保存する */
+    function normalizeWorkContentListsPersisted() {
+      lists.workTypes = sortJapaneseStrings(dedupeStringList(lists.workTypes), { modalScriptOrder: true });
+      lists.workSectors = sortJapaneseStrings(dedupeStringList(lists.workSectors), { modalScriptOrder: true });
+      lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
+      saveLists();
+    }
+
+    /**
+     * 作業員リストの並び（用紙ポップアップ・リストモーダル共通）
+     * 1. 所属会社「後大建設」のブロックを先頭に
+     * 2. 後大建設以外の所属 … **所属の読み** を 1文字目から字種ルールで比較（空所属は最後）
+     * 3. 同一所属内 … **氏名表記の先頭字種**でひら漢→カタ→英字→その他の順にブロック分けし、
+     *    同ブロック内は **氏名キー**（読み→なければ表記）を ja-JP / en Collator で比較
+     */
+    function sortWorkerEntriesForSheet(workers) {
+      const normalized = (workers || []).map((e) => normalizeWorkerEntry(e)).filter((w) => w.name);
+      const byCo = new Map();
+      for (const w of normalized) {
+        const k = String(w.company ?? "").trim();
+        if (!byCo.has(k)) byCo.set(k, []);
+        byCo.get(k).push(w);
+      }
+      function sortWorkerNamesInGroup(ws) {
+        ws.sort((a, b) => {
+          return compareWorkerNamesDisplayScriptThenYomi(a, b);
+        });
+      }
+      for (const [, ws] of byCo) {
+        sortWorkerNamesInGroup(ws);
+      }
+      const keys = [...byCo.keys()];
+      const pinKeys = keys.filter((k) => k === COMPANY_PIN_TOP);
+      const restKeys = keys.filter((k) => k !== COMPANY_PIN_TOP).sort(createShozokuCompanyComparator(byCo));
+      const out = [];
+      for (const k of [...pinKeys, ...restKeys]) {
+        out.push(...byCo.get(k));
+      }
+      return out;
+    }
+
+    /**
+     * lists.workers をモーダル／用紙と同じルールで並べ替えて保存用配列に反映する。
+     * sortWorkerEntriesForSheet は氏名ありのみを対象にするため、氏名なし行は元の相対順のまま末尾に連結する。
+     */
+    function persistWorkersSorted() {
+      if (!Array.isArray(lists.workers)) {
+        lists.workers = [];
+        return;
+      }
+      const named = [];
+      const unnamed = [];
+      for (const e of lists.workers) {
+        if (normalizeWorkerEntry(e).name) named.push(e);
+        else unnamed.push(e);
+      }
+      lists.workers = [...sortWorkerEntriesForSheet(named), ...unnamed];
+    }
+
+    /** 早・残：0.25刻みの表示（四半刻み） */
+    function formatOtStepValue(v) {
+      const q = Math.round(v * 4);
+      const r = q / 4;
+      if (q % 4 === 0) return String(r);
+      if (q % 2 === 0) return r.toFixed(1);
+      return r.toFixed(2);
+    }
+
+    /** 早・残：0.25～10（0.25刻み）に丸め。0.25未満・不正は空 */
+    function normalizeWorkerOt(raw) {
+      const s = String(raw || "").trim().replace(",", ".");
+      if (!s) return "";
+      const n = parseFloat(s);
+      if (isNaN(n)) return "";
+      if (n < 0.25) return "";
+      const clamped = Math.min(10, Math.max(0.25, n));
+      const snapped = Math.round(clamped / 0.25) * 0.25;
+      const v = Math.min(10, Math.max(0.25, snapped));
+      return formatOtStepValue(v);
+    }
+
+    function overtimeSheetItems() {
+      const out = [];
+      for (let i = 1; i <= 40; i++) {
+        out.push(formatOtStepValue(i / 4));
+      }
+      return out;
+    }
+    const fieldSheet = document.getElementById("fieldSheet");
+    const fieldSheetPanel = fieldSheet.querySelector(".field-sheet-panel");
+    const fieldSheetList = document.getElementById("fieldSheetList");
+    let sheetTarget = null;
+    let sheetListKey = "";
+
+    function closeFieldSheet() {
+      if (sheetTarget) {
+        sheetTarget.classList.remove("is-field-sheet-open");
+        try {
+          if (document.activeElement === sheetTarget) sheetTarget.blur();
+        } catch (_) {}
+      }
+      fieldSheet.classList.remove("active");
+      fieldSheet.setAttribute("aria-hidden", "true");
+      sheetTarget = null;
+      sheetListKey = "";
+      fieldSheetList.innerHTML = "";
+      fieldSheetPanel.style.top = "";
+      fieldSheetPanel.style.left = "";
+      fieldSheetPanel.style.width = "";
+      fieldSheetPanel.style.maxHeight = "";
+    }
+
+    function positionFieldSheetPanel(anchor) {
+      const rect = anchor.getBoundingClientRect();
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const w = Math.min(360, Math.max(220, vw - margin * 2));
+      let left = rect.left + rect.width / 2 - w / 2;
+      left = Math.max(margin, Math.min(left, vw - w - margin));
+      fieldSheetPanel.style.width = w + "px";
+      fieldSheetPanel.style.left = left + "px";
+      const maxH = Math.min(320, Math.floor(vh * 0.65));
+      fieldSheetPanel.style.maxHeight = maxH + "px";
+
+      let top = rect.bottom + margin;
+      const ph = fieldSheetPanel.offsetHeight || 160;
+      if (top + ph > vh - margin) {
+        top = rect.top - ph - margin;
+      }
+      if (top < margin) top = margin;
+      fieldSheetPanel.style.top = top + "px";
+    }
+
+    function openFieldSheet(input, listKey) {
+      if (listKey === "_signature") {
+        if (!sigModal || sigModal.classList.contains("active")) return;
+        if (fieldSheet.classList.contains("active")) closeFieldSheet();
+        else if (sheetTarget && sheetTarget !== input) closeFieldSheet();
+        sheetTarget = input;
+        sheetListKey = "_signature";
+        input.classList.add("is-field-sheet-open");
+        sigModal.classList.add("active");
+        resizeCanvas();
+        return;
+      }
+      if (sigModal && sigModal.classList.contains("active")) sigModal.classList.remove("active");
+      if (sheetTarget === input && fieldSheet.classList.contains("active")) return;
+      if (sheetTarget && sheetTarget !== input) closeFieldSheet();
+      sheetTarget = input;
+      sheetListKey = listKey;
+      input.classList.add("is-field-sheet-open");
+      let arr;
+      if (listKey === "_overtime") {
+        arr = overtimeSheetItems();
+      } else if (listKey === "companies") {
+        arr = sortJapaneseStrings(lists.companies || [], { pinToTop: COMPANY_PIN_TOP, modalScriptOrder: true });
+      } else if (listKey === "sites") {
+        arr = sortJapaneseStrings(lists.sites || [], { modalScriptOrder: true });
+      } else if (listKey === "workers") {
+        arr = sortWorkerEntriesForSheet(lists.workers || []);
+      } else if (listKey === "workTypes") {
+        arr = sortJapaneseStrings(lists.workTypes || [], { modalScriptOrder: true });
+      } else if (listKey === "workSectors") {
+        arr = sortJapaneseStrings(lists.workSectors || [], { modalScriptOrder: true });
+      } else if (listKey === "workDetails") {
+        arr = sortJapaneseStrings(lists.workDetails || [], { modalScriptOrder: true });
+      } else {
+        arr = [...(lists[listKey] || [])].reverse();
+      }
+      fieldSheetList.innerHTML = "";
+      const otSuffix = listKey === "_overtime" ? (input.dataset.otUnit || "ｈ") : "";
+      arr.forEach((v) => {
+        const display =
+          listKey === "workers"
+            ? formatWorkerEntry(v)
+            : listKey === "_overtime"
+              ? `${v} ${otSuffix}`
+              : v;
+        if (!display && listKey !== "_overtime") return;
+        if (listKey === "_overtime" && !v) return;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "field-sheet-item";
+        b.textContent = listKey === "_overtime" ? `${v} ${otSuffix}` : display;
+        b.title = listKey === "_overtime" ? `${v} ${otSuffix}` : display;
+        b.addEventListener("click", () => {
+          /* 作業証明書の作業員欄には所属会社を出さない（シート候補は formatWorkerEntry で区別） */
+          input.value = listKey === "workers" ? normalizeWorkerEntry(v).name : v;
+          input.readOnly = true;
+          input.classList.remove("sheet-await-direct");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          if (input.classList.contains("worker-name") || input.classList.contains("worker-ot")) refreshTotals();
+          closeFieldSheet();
+        });
+        const li = document.createElement("li");
+        li.appendChild(b);
+        fieldSheetList.appendChild(li);
+      });
+      fieldSheet.classList.add("active");
+      fieldSheet.setAttribute("aria-hidden", "false");
+      document.querySelectorAll(".sheet-target.sheet-await-direct").forEach((el) => {
+        if (el !== input) el.classList.remove("sheet-await-direct");
+      });
+      input.classList.add("sheet-await-direct");
+      try {
+        input.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } catch (_) {}
+      requestAnimationFrame(() => {
+        positionFieldSheetPanel(input);
+        requestAnimationFrame(() => {
+          positionFieldSheetPanel(input);
+          try {
+            input.focus({ preventScroll: true });
+          } catch (_) {}
+        });
+      });
+    }
+
+    fieldSheetPanel.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    fieldSheet.querySelector(".field-sheet-backdrop")?.addEventListener("pointerdown", (e) => {
+      if (!fieldSheet.classList.contains("active")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeFieldSheet();
+    });
+
+    function focusSheetTargetDirect(t) {
+      t.classList.remove("sheet-await-direct");
+      t.readOnly = false;
+      t.style.caretColor = "";
+      const focusNow = () => {
+        t.focus({ preventScroll: true });
+        try {
+          const n = t.value.length;
+          t.setSelectionRange(n, n);
+        } catch (_) {}
+      };
+      requestAnimationFrame(() => {
+        focusNow();
+        setTimeout(focusNow, 60);
+      });
+    }
+
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!fieldSheet.classList.contains("active")) return;
+        if (fieldSheetPanel.contains(e.target)) return;
+        const anchor = sheetTarget;
+        /* 一覧表示中は背後の全画面 backdrop が記入欄の上に乗るため、座標が青枠内なら「もう一度押した」とみなす */
+        if (
+          anchor &&
+          anchor.readOnly &&
+          anchor.dataset.listKey &&
+          anchor.dataset.listKey !== "_signature"
+        ) {
+          const r = anchor.getBoundingClientRect();
+          if (
+            e.clientX >= r.left &&
+            e.clientX <= r.right &&
+            e.clientY >= r.top &&
+            e.clientY <= r.bottom
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeFieldSheet();
+            focusSheetTargetDirect(anchor);
+            return;
+          }
+        }
+        const t = e.target.closest(".sheet-target");
+        if (t && t === sheetTarget && t.readOnly && t.dataset.listKey && t.dataset.listKey !== "_signature") {
+          e.preventDefault();
+          e.stopPropagation();
+          closeFieldSheet();
+          focusSheetTargetDirect(t);
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        /* パネル外は常にキャンセル（別の記入欄をタップしても即切替えしない。サインと同じ操作感） */
+        closeFieldSheet();
+      },
+      true
+    );
+
+    document.getElementById("paper").addEventListener("pointerdown", (e) => {
+      if (fieldSheet.classList.contains("active")) return;
+      const t = e.target.closest(".sheet-target");
+      if (!t || !t.dataset.listKey || !t.readOnly) return;
+      e.preventDefault();
+      if (t.dataset.listKey === "_signature") {
+        openFieldSheet(t, "_signature");
+        return;
+      }
+      /* 一覧を一度開いたあと（シートを閉じた状態）でもう一度青枠を押すと直接入力 */
+      if (t.classList.contains("sheet-await-direct")) {
+        t.classList.remove("sheet-await-direct");
+        focusSheetTargetDirect(t);
+        return;
+      }
+      openFieldSheet(t, t.dataset.listKey);
+    });
+
+    document.getElementById("paper").addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key !== "Delete" && e.key !== "Backspace") return;
+        const t = e.target;
+        if (!t || !t.classList.contains("sheet-target") || !t.dataset.listKey) return;
+        if (t.dataset.listKey === "_signature") return;
+        if (!t.readOnly) return;
+        e.preventDefault();
+        t.value = "";
+        t.classList.remove("sheet-await-direct");
+        t.dispatchEvent(new Event("input", { bubbles: true }));
+        if (t.classList.contains("worker-name") || t.classList.contains("worker-ot")) refreshTotals();
+      },
+      true
+    );
+
+    document.getElementById("signSlotInput")?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      openFieldSheet(e.currentTarget, "_signature");
+    });
+
+    document.getElementById("paper").addEventListener("blur", (e) => {
+      const t = e.target;
+      if (!t || !t.classList.contains("sheet-target") || !t.dataset.listKey) return;
+      const key = t.dataset.listKey;
+      if (key === "_signature") return;
+      if (key === "_overtime") {
+        t.value = normalizeWorkerOt(t.value);
+        if (t.classList.contains("worker-ot")) refreshTotals();
+      } else {
+        void addIfNew(key, t.value);
+      }
+      t.readOnly = true;
+      t.classList.remove("sheet-await-direct");
+    }, true);
+
+    /** adjustDensity と同じ段階の行高（px 数値）。PDF の「12名時基準」にも使用 */
+    function densityRowHeightPx(n) {
+      /*
+       * 画面（adjustDensity）：作業・備考の行数で 48→40 のように段を切り替えると、何行目かで枠・縦線がズレて見える。
+       * そのため「最小幅 40px」の段は使わず、n>=10 は常に 48px 基準に固定する（21 行以降も同様にズレない）。
+       * より段を詰めたい n<=9, 8, 7 以下は従来どおり。PDF の ref は PDF_LOCK_FRAME_DENSITY_N（通常 12）のみで決まる。
+       */
+      if (n > 9) return 48;
+      if (n > 7) return 54;
+      return 62;
+    }
+
+    /** PDF 列ロックの基準行高に加算する分。画面の作業員行高も同式で揃える */
+    const PDF_WORKER_COL_REF_EXTRA_PX = 22;
+    /** PDF 作業内容列ロック: #taskRows 合計に「行数×この値」を加算（0＝6×ref のみで 6段と7段の合計を揃える） */
+    const PDF_TASK_COL_LOCK_PER_ROW_BUMP_PX = 0;
+    /** PDF 列ロックの枠を決める density 用の段数（作業・備考の行数では切り替えない） */
+    const PDF_LOCK_FRAME_DENSITY_N = 12;
+    /**
+     * PDF 列ロック時の 1 段あたり ref（density+EXTRA）。
+     * 作業段数・備考段数では密度段階を切り替えず、常に density(PDF_LOCK_FRAME_DENSITY_N)。
+     * 合計枠（6×ref・作業員列・備考の 5×ref 由来）は一定で、ブロック内は行数の均等割りのみで詰まる。
+     */
+    function pdfTaskColLockRefPx(_taskCount, _remarkCount) {
+      return densityRowHeightPx(PDF_LOCK_FRAME_DENSITY_N) + PDF_WORKER_COL_REF_EXTRA_PX;
+    }
+    /** `#taskRows` データ列の合計高（6×ref＋行×BUMP） */
+    function pdfTaskColLockTotalDataHeightPx(taskCount, remarkCount) {
+      const taskRefPx = pdfTaskColLockRefPx(taskCount, remarkCount);
+      return 6 * taskRefPx + taskCount * PDF_TASK_COL_LOCK_PER_ROW_BUMP_PX;
+    }
+    /** 1 行あたりの高さ（PDF の `--pdf-task-row-h` のみ。画面の作業内容行高は別途作業員と揃える） */
+    function pdfTaskColLockEachRowPx(taskCount, remarkCount) {
+      const tc = taskCount;
+      if (tc < 1) return densityRowHeightPx(12);
+      return pdfTaskColLockTotalDataHeightPx(tc, remarkCount) / tc;
+    }
+    /** PDF 備考列ロックのみ: 合計高を常に 5×ref（実際の備考行数で割る＝5段と6段で合計を揃える）。画面には付けない */
+    const PDF_REMARK_COL_LOCK_BASE_ROWS = 5;
+    const PDF_REMARK_COL_LOCK_PER_ROW_BUMP_PX = 0;
+    /** PDF 備考ロックの「5段分の合計高」に掛ける係数。行が6以上でも合計 px はこの式のまま（行数で均等割りのみ変わる） */
+    const PDF_REMARK_LOCK_HEIGHT_SCALE_WHEN_5_ROWS = 0.76;
+
+    function adjustDensity() {
+      const tc = state.taskCount;
+      const rc = state.remarkCount;
+      /* 作業員・作業内容（画面）の行高基準を揃える：12段・作業・備考のいずれかが多い側に追随 */
+      const densityN = Math.max(12, tc, rc);
+      /* 作業員行高＝PDF12名列ロックと同じ基準 refPx（density(densityN)+EXTRA） */
+      const workerRefPx = densityRowHeightPx(densityN) + PDF_WORKER_COL_REF_EXTRA_PX;
+      document.documentElement.style.setProperty("--worker-row-h", `${workerRefPx}px`);
+      /*
+       * 作業内容（画面のみ）：行を増やすたびに作業員と同じ高さの「段」が下に積まれるよう、
+       * PDF の 6×ref÷行数（行が増えるほど各行が縮む）は使わず、作業員行と同じ refPx を 1 行に使う。
+       * 画面の作業員人数を増やしたときは行高は変えず下に段を足す（行の詰めは PDF のみ）。
+       */
+      document.documentElement.style.setProperty("--task-row-h", `${workerRefPx}px`);
+      /*
+       * 備考（画面）：行を足すだけで下に段を積む。1 行の高さは作業員・作業内容と同じ workerRefPx に揃え、
+       * 作業段数を増やしたときに備考だけ別密度になって枠・段取りがズレるのを防ぐ（例: 作業13行）。
+       * 備考段数 rc では行高は変えない（密度は densityN = max(12, tc, rc) のみで決まる）。
+       */
+      document.documentElement.style.setProperty("--remark-row-h", `${workerRefPx}px`);
+    }
+
+    function findWorkerRowByNumLabel(label) {
+      return [...document.querySelectorAll("#wLeft .w-row, #wRight .w-row")].find((r) => {
+        const numCell = r.querySelector(":scope > div:first-child");
+        return numCell && numCell.textContent.trim() === label;
+      });
+    }
+
+    function mountWorkersAddBtn(hostEl) {
+      const host = hostEl || document.getElementById("workersAddRow");
+      if (!host) return;
+      const wc = state.workerCount;
+      const labels = [];
+      if (wc > 14) {
+        /* 14 を超えて増えたら、常に最終行（番号 = 人数） */
+        labels.push(String(wc));
+      } else {
+        if (wc >= 14) labels.push("14");
+        if (wc >= 12) labels.push("12");
+        if (wc > 0) labels.push(String(wc));
+      }
+      let row = null;
+      for (const lab of labels) {
+        row = findWorkerRowByNumLabel(lab);
+        if (row) break;
+      }
+      if (!row) {
+        const rightRows = document.querySelectorAll("#wRight .w-row");
+        if (rightRows.length) row = rightRows[rightRows.length - 1];
+        else {
+          const leftRows = document.querySelectorAll("#wLeft .w-row");
+          if (leftRows.length) row = leftRows[leftRows.length - 1];
+        }
+      }
+      if (!row) {
+        document.querySelector(".workers")?.appendChild(host);
+        return;
+      }
+      const nw = row.querySelector(".name-wrap");
+      if (nw) nw.appendChild(host);
+    }
+
+    function buildWorkers() {
+      const prevNames = [
+        ...wLeft.querySelectorAll(".w-row .worker-name"),
+        ...wRight.querySelectorAll(".w-row .worker-name"),
+      ].map((el) => el.value);
+      const prevOts = [
+        ...wLeft.querySelectorAll(".w-row .worker-ot"),
+        ...wRight.querySelectorAll(".w-row .worker-ot"),
+      ].map((el) => el.value);
+      const host = document.getElementById("workersAddRow");
+      if (host) host.remove();
+      wLeft.innerHTML = "";
+      wRight.innerHTML = "";
+      const half = Math.ceil(state.workerCount / 2);
+      for (let i = 0; i < state.workerCount; i++) {
+        const row = document.createElement("div");
+        row.className = "w-row";
+        row.innerHTML = `
+          <div>${i + 1}</div>
+          <div class="name-wrap">
+            <input class="worker-name sheet-target" type="text" data-list-key="workers" readonly />
+          </div>
+          <div class="w-ot-cell">
+            <div class="w-ot-input-wrap">
+              <input class="worker-ot ot sheet-target" type="text" inputmode="decimal" data-list-key="_overtime" aria-label="早・残（時間）" readonly />
+            </div>
+          </div>
+        `;
+        if (i < half) wLeft.appendChild(row); else wRight.appendChild(row);
+      }
+      const nameEls = [
+        ...wLeft.querySelectorAll(".w-row .worker-name"),
+        ...wRight.querySelectorAll(".w-row .worker-name"),
+      ];
+      const otEls = [
+        ...wLeft.querySelectorAll(".w-row .worker-ot"),
+        ...wRight.querySelectorAll(".w-row .worker-ot"),
+      ];
+      const lim = Math.min(prevNames.length, nameEls.length);
+      for (let i = 0; i < lim; i++) {
+        nameEls[i].value = prevNames[i];
+        otEls[i].value = prevOts[i] ?? "";
+      }
+      mountWorkersAddBtn(host);
+      bindTotals();
+      refreshTotals();
+    }
+
+    function mountTasksAddBtn(hostEl) {
+      const host = hostEl || document.getElementById("tasksAddRow");
+      if (!host) return;
+      const rows = document.querySelectorAll("#taskRows .t-row");
+      if (!rows.length) {
+        document.querySelector(".tasks")?.appendChild(host);
+        return;
+      }
+      const lastRow = rows[rows.length - 1];
+      const cell = lastRow.querySelector(":scope > .task-main-cell");
+      if (cell) cell.appendChild(host);
+    }
+
+    function rowHasTaskContent(row) {
+      if (!row) return false;
+      const type = String(row.querySelector(".task-type")?.value ?? "").trim();
+      const sector = String(row.querySelector(".task-sector")?.value ?? "").trim();
+      const detail = String(row.querySelector(".task-detail")?.value ?? "").trim();
+      return Boolean(type || sector || detail);
+    }
+    function syncTaskContractMarkForRow(row) {
+      if (!row) return;
+      row.classList.toggle("contract-mark-hidden", !rowHasTaskContent(row));
+    }
+
+    function buildTasks() {
+      const prevPayload = [...taskRows.querySelectorAll(":scope > .t-row")].map((row) => {
+        const circled = row.querySelectorAll(".circled");
+        let contractIndex = 0;
+        circled.forEach((c, idx) => {
+          if (c.classList.contains("active")) contractIndex = idx;
+        });
+        return {
+          taskType: row.querySelector(".task-type")?.value ?? "",
+          taskSector: row.querySelector(".task-sector")?.value ?? "",
+          taskDetail: row.querySelector(".task-detail")?.value ?? "",
+          taskMan: row.querySelector(".task-man")?.value ?? "",
+          taskHours: row.querySelector(".task-hours")?.value ?? "",
+          contractIndex,
+        };
+      });
+
+      const host = document.getElementById("tasksAddRow");
+      if (host) host.remove();
+      taskRows.innerHTML = "";
+      for (let i = 0; i < state.taskCount; i++) {
+        const row = document.createElement("div");
+        row.className = "t-row";
+        row.innerHTML = `
+          <div class="task-main-cell">
+            <div class="task-dual">
+              <input class="task-type sheet-target" type="text" data-list-key="workTypes" readonly />
+              <input class="task-sector sheet-target" type="text" data-list-key="workSectors" readonly />
+              <input class="task-detail sheet-target" type="text" data-list-key="workDetails" readonly />
+            </div>
+          </div>
+          <div class="num task-cell-unit">
+            <div class="task-unit-input-wrap">
+              <input class="task-man sheet-target" type="text" inputmode="decimal" data-list-key="_overtime" data-ot-unit="人" readonly />
+            </div>
+          </div>
+          <div class="num task-cell-unit">
+            <div class="task-unit-input-wrap">
+              <input class="task-hours sheet-target" type="text" inputmode="decimal" data-list-key="_overtime" readonly />
+            </div>
+          </div>
+          <div><span class="circled active">請</span>・<span class="circled">常</span></div>
+        `;
+        taskRows.appendChild(row);
+        const opts = row.querySelectorAll(".circled");
+        opts.forEach((o) => o.addEventListener("click", () => {
+          opts.forEach((x) => x.classList.remove("active"));
+          o.classList.add("active");
+        }));
+      }
+      const newRows = taskRows.querySelectorAll(":scope > .t-row");
+      const lim = Math.min(prevPayload.length, newRows.length);
+      for (let i = 0; i < lim; i++) {
+        const p = prevPayload[i];
+        const nr = newRows[i];
+        const te = nr.querySelector(".task-type");
+        const se = nr.querySelector(".task-sector");
+        const de = nr.querySelector(".task-detail");
+        const me = nr.querySelector(".task-man");
+        const he = nr.querySelector(".task-hours");
+        if (te) te.value = p.taskType;
+        if (se) se.value = p.taskSector ?? "";
+        if (de) de.value = p.taskDetail;
+        if (me) me.value = p.taskMan;
+        if (he) he.value = p.taskHours;
+        nr.querySelectorAll(".circled").forEach((c, idx) => {
+          c.classList.toggle("active", idx === p.contractIndex);
+        });
+        syncTaskContractMarkForRow(nr);
+      }
+      for (let i = lim; i < newRows.length; i++) {
+        syncTaskContractMarkForRow(newRows[i]);
+      }
+      mountTasksAddBtn(host);
+    }
+
+    taskRows.addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t || !(t instanceof Element)) return;
+      if (!t.classList.contains("task-type") && !t.classList.contains("task-sector") && !t.classList.contains("task-detail")) return;
+      const row = t.closest(".t-row");
+      syncTaskContractMarkForRow(row);
+    });
+    taskRows.addEventListener("change", (e) => {
+      const t = e.target;
+      if (!t || !(t instanceof Element)) return;
+      if (!t.classList.contains("task-type") && !t.classList.contains("task-sector") && !t.classList.contains("task-detail")) return;
+      const row = t.closest(".t-row");
+      syncTaskContractMarkForRow(row);
+    });
+
+    function mountRemarksAddBtn(hostEl) {
+      const host = hostEl || document.getElementById("remarksAddRow");
+      if (!host) return;
+      const rows = document.querySelectorAll("#remarkRows .r-row");
+      if (!rows.length) {
+        document.querySelector(".remarks")?.appendChild(host);
+        return;
+      }
+      rows[rows.length - 1].appendChild(host);
+    }
+
+    function buildRemarks() {
+      const prevTexts = [...remarkRows.querySelectorAll(":scope > .r-row textarea")].map((t) => t.value);
+
+      const host = document.getElementById("remarksAddRow");
+      if (host) host.remove();
+      remarkRows.innerHTML = "";
+      for (let i = 0; i < state.remarkCount; i++) {
+        const r = document.createElement("div");
+        r.className = "r-row";
+        r.innerHTML = `<textarea></textarea>`;
+        remarkRows.appendChild(r);
+      }
+      const textareas = remarkRows.querySelectorAll(":scope > .r-row textarea");
+      const lim = Math.min(prevTexts.length, textareas.length);
+      for (let i = 0; i < lim; i++) {
+        textareas[i].value = prevTexts[i];
+      }
+      mountRemarksAddBtn(host);
+    }
+
+    function bindTotals() {
+      document.querySelectorAll(".worker-name,.worker-ot").forEach((el) => el.addEventListener("input", refreshTotals));
+    }
+
+    /** 早・残合計：最大小数第2位まで。整数は「12」、小数1位で足りるなら「12.5」、2位が必要なら「12.25」 */
+    function formatEarlyLateTotal(h) {
+      const n = Math.round(Number(h) * 100) / 100;
+      if (!isFinite(n)) return "0";
+      return String(Number(n.toFixed(2)));
+    }
+
+    function refreshTotals() {
+      const names = [...document.querySelectorAll(".worker-name")].map((e) => e.value.trim()).filter(Boolean).length;
+      const h = [...document.querySelectorAll(".worker-ot")].map((e) => Number(e.value || 0)).filter((v) => !isNaN(v)).reduce((a, b) => a + b, 0);
+      document.getElementById("totalWorkers").value = names;
+      document.getElementById("totalOvertime").value = formatEarlyLateTotal(h);
+    }
+
+    document.getElementById("shiftDay").onclick = () => {
+      state.shift = "day";
+      document.getElementById("shiftDay").classList.add("active");
+      document.getElementById("shiftNight").classList.remove("active");
+    };
+    document.getElementById("shiftNight").onclick = () => {
+      state.shift = "night";
+      document.getElementById("shiftNight").classList.add("active");
+      document.getElementById("shiftDay").classList.remove("active");
+    };
+
+    document.getElementById("addWorkerBtn").onclick = () => { state.workerCount += 2; adjustDensity(); buildWorkers(); };
+    document.getElementById("addTaskBtn").onclick = () => { state.taskCount += 1; adjustDensity(); buildTasks(); };
+    document.getElementById("addRemarkBtn").onclick = () => { state.remarkCount += 1; adjustDensity(); buildRemarks(); };
+
+    function refreshWeekday() {
+      const yEl = document.getElementById("year");
+      const mEl = document.getElementById("month");
+      const dEl = document.getElementById("day");
+      const wdEl = document.getElementById("weekday");
+      const yy = parseInt(yEl.value, 10);
+      const mm = parseInt(mEl.value, 10);
+      const dd = parseInt(dEl.value, 10);
+      if (!yEl.value.trim() || !mEl.value.trim() || !dEl.value.trim() ||
+          isNaN(yy) || isNaN(mm) || isNaN(dd)) {
+        wdEl.textContent = "( )";
+        return;
+      }
+      const dt = new Date(yy, mm - 1, dd);
+      if (isNaN(dt.getTime())) {
+        wdEl.textContent = "( )";
+        return;
+      }
+      const names = ["日", "月", "火", "水", "木", "金", "土"];
+      wdEl.textContent = "(" + names[dt.getDay()] + ")";
+    }
+
+    ["year", "month", "day"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", refreshWeekday);
+    });
+
+    function setTodayToDateInputs() {
+      const t = new Date();
+      document.getElementById("year").value = String(t.getFullYear());
+      document.getElementById("month").value = String(t.getMonth() + 1).padStart(2, "0");
+      document.getElementById("day").value = String(t.getDate()).padStart(2, "0");
+    }
+
+    function pdfUseViewportCapture() {
+      return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    /**
+     * html2canvas は input の縦方向が欠けやすいので、クローン上だけ
+     * 年月日・会社名・現場名・総工数・早・残（ヘッダ）を span に差し替えてから焼く。
+     * 作業員氏名・早・残は applyWorkerFieldsPdfCloneOverlay。
+     */
+    function applyDatePdfCloneStyles(clonedDoc) {
+      if (!clonedDoc) return;
+      const ymd =
+        clonedDoc.querySelector("#paper .date-ymd") || clonedDoc.querySelector(".date-ymd");
+      if (ymd) {
+        ymd.style.setProperty("display", "inline-flex", "important");
+        ymd.style.setProperty("align-items", "flex-end", "important");
+        ymd.style.setProperty("line-height", "1", "important");
+        ymd.style.setProperty("gap", "0", "important");
+      }
+      const di =
+        clonedDoc.querySelector("#paper .date-inline") || clonedDoc.querySelector(".date-inline");
+      if (di) di.style.setProperty("align-items", "flex-end", "important");
+
+      const parts = [
+        { id: "year", cls: "date-pdf-value date-pdf-year" },
+        { id: "month", cls: "date-pdf-value date-pdf-md" },
+        { id: "day", cls: "date-pdf-value date-pdf-md" },
+      ];
+      parts.forEach(({ id, cls }) => {
+        const el = clonedDoc.getElementById(id);
+        if (!el || el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.className = cls;
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+
+      ["companyName", "siteName"].forEach((id) => {
+        const el = clonedDoc.getElementById(id);
+        if (!el || el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.id = id;
+        span.className = "field header-field-pdf-value";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+
+      ["totalWorkers", "totalOvertime"].forEach((id) => {
+        const el = clonedDoc.getElementById(id);
+        if (!el || el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.id = id;
+        span.className = "summary-total-pdf-value";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+    }
+
+    /**
+     * PDF クローン上のみ: 作業員氏名・早・残の input を span に差し替え。
+     * html2canvas は input の縦方向が欠けたり上詰めに見えたりしやすいため（会社名・人工と同様）。
+     */
+    function applyWorkerFieldsPdfCloneOverlay(clonedDoc) {
+      if (!clonedDoc) return;
+      clonedDoc
+        .querySelectorAll("#wLeft .w-row .worker-name, #wRight .w-row .worker-name")
+        .forEach((el) => {
+          if (el.tagName !== "INPUT") return;
+          const span = clonedDoc.createElement("span");
+          span.className = "worker-name-pdf-value";
+          span.textContent = el.value || "";
+          span.setAttribute("aria-hidden", "true");
+          el.replaceWith(span);
+        });
+      clonedDoc
+        .querySelectorAll("#wLeft .w-row .worker-ot, #wRight .w-row .worker-ot")
+        .forEach((el) => {
+          if (el.tagName !== "INPUT") return;
+          const span = clonedDoc.createElement("span");
+          span.className = "worker-ot-pdf-value ot";
+          span.textContent = el.value || "";
+          span.setAttribute("aria-hidden", "true");
+          el.replaceWith(span);
+        });
+    }
+
+    /**
+     * PDF クローン上のみ: 作業内容の人工・ｈ input を span に差し替え（html2canvas で数字の欠けを避ける試作）。
+     * 実 DOM は変更しない。data-pdf-task-col-lock 時のみ。
+     */
+    function applyTaskManHoursPdfCloneOverlay(clonedDoc) {
+      if (!clonedDoc) return;
+      const paper = clonedDoc.getElementById("paper");
+      if (!paper || paper.getAttribute("data-pdf-task-col-lock") !== "1") return;
+      clonedDoc.querySelectorAll("#taskRows .t-row .task-man, #taskRows .t-row .task-hours").forEach((el) => {
+        if (el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.className = "task-pdf-num";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+    }
+
+    /**
+     * PDF クローン上のみ: 作業11段以上で区分・工区・詳細の input を span に差し替え。
+     * html2canvas が小さい input の文字を描画しないことがあるため（実 DOMは変更しない）。
+     */
+    function applyTaskTypeDetailPdfCloneOverlay(clonedDoc) {
+      if (!clonedDoc) return;
+      const paper = clonedDoc.getElementById("paper");
+      if (!paper || paper.getAttribute("data-pdf-task-num-dense") !== "1") return;
+      clonedDoc.querySelectorAll("#taskRows .t-row .task-type").forEach((el) => {
+        if (el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.className = "task-type-pdf-value";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+      clonedDoc.querySelectorAll("#taskRows .t-row .task-sector").forEach((el) => {
+        if (el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.className = "task-sector-pdf-value";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+      clonedDoc.querySelectorAll("#taskRows .t-row .task-detail").forEach((el) => {
+        if (el.tagName !== "INPUT") return;
+        const span = clonedDoc.createElement("span");
+        span.className = "task-detail-pdf-value";
+        span.textContent = el.value || "";
+        span.setAttribute("aria-hidden", "true");
+        el.replaceWith(span);
+      });
+    }
+
+    /**
+     * A4 縦に用紙画像を配置。
+     * ・1ページに収まるとき: 従来の contain（min(横スケール,縦スケール)）— 12名で縦優先になることもある
+     * ・印刷幅いっぱいにしたときの縦が innerH を超えるときだけ: 幅は innerW 固定で複数ページ（14名など）
+     * 常に幅いっぱいにすると、12名側が縦優先だったケースより拡大して見えるため分岐する。
+     */
+    function addCanvasToA4PortraitPdf(pdf, canvas, capScale, margin) {
+      const pxToMm = 25.4 / 96;
+      const cssPxW = canvas.width / capScale;
+      const cssPxH = canvas.height / capScale;
+      const imgWmm = cssPxW * pxToMm;
+      const imgHmm = cssPxH * pxToMm;
+      const pageW = 210;
+      const pageH = 297;
+      const innerW = pageW - margin.left - margin.right;
+      const innerH = pageH - margin.top - margin.bottom;
+      const imgAspect = cssPxW / cssPxH;
+      const fullWidthDrawHmm = innerW / imgAspect;
+      const yTop = margin.top;
+
+      if (fullWidthDrawHmm > innerH + 0.02) {
+        const splitDrawW = innerW;
+        const splitDrawH = fullWidthDrawHmm;
+        const nPages = Math.ceil(splitDrawH / innerH);
+        let accMm = 0;
+        for (let p = 0; p < nPages; p++) {
+          if (p > 0) pdf.addPage();
+          const pageDrawHmm = Math.min(innerH, splitDrawH - accMm);
+          const t0 = accMm / splitDrawH;
+          const t1 = (accMm + pageDrawHmm) / splitDrawH;
+          accMm += pageDrawHmm;
+          const y0css = t0 * cssPxH;
+          const y1css = t1 * cssPxH;
+          const sy = Math.max(0, Math.floor(y0css * capScale));
+          const ey = Math.min(canvas.height, Math.ceil(y1css * capScale));
+          const sh = Math.max(1, ey - sy);
+          const slice = document.createElement("canvas");
+          slice.width = canvas.width;
+          slice.height = sh;
+          slice.getContext("2d").drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+          pdf.addImage(slice.toDataURL("image/png"), "PNG", margin.left, yTop, splitDrawW, pageDrawHmm, undefined, "FAST");
+        }
+        return;
+      }
+
+      const scale = Math.min(innerW / imgWmm, innerH / imgHmm);
+      const drawW = imgWmm * scale;
+      const drawH = imgHmm * scale;
+      const x = margin.left + (innerW - drawW) / 2;
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, yTop, drawW, drawH, undefined, "FAST");
+    }
+
+    async function createPdfFile() {
+      closeFieldSheet();
+      const paper = document.getElementById("paper");
+      const useViewport = pdfUseViewportCapture();
+      let pdfWorkerRowRestore = false;
+      let pdfTaskColRestore = false;
+      let pdfRemarkColRestore = false;
+      document.body.classList.add("pdf-render");
+      /* html2canvas のクローンでは body に pdf-render が付かないことがあるため、#paper 側で PDF 用レイアウトを掛ける */
+      if (paper) paper.setAttribute("data-pdf-capture", "1");
+      /*
+       * 方針1: 作業員が偶数かつ12名以上は列ロック（12・14で片列の合計が一致。行は flex 均等）。
+       * ref は pdfTaskColLockRefPx（作業・備考の段数では変えず常に12相当密度）で作業内容枠と同じ合計 6×ref に揃える。
+       * 12名超のみ data-pdf-worker-compress で早・残・氏名の詰め。
+       */
+      if (paper && state.workerCount >= 12 && state.workerCount % 2 === 0) {
+        const refPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
+        const rowsPerHalf = state.workerCount / 2;
+        const rowsPerHalfAt12 = 6;
+        const colDataPx = rowsPerHalfAt12 * refPx;
+        const eachPx = colDataPx / rowsPerHalf;
+        paper.style.setProperty("--pdf-workers-col-data-h", `${colDataPx}px`);
+        paper.style.setProperty("--pdf-worker-rows-per-half", String(rowsPerHalf));
+        paper.style.setProperty("--pdf-worker-row-h", `${eachPx}px`);
+        paper.setAttribute("data-pdf-worker-col-lock", "1");
+        if (state.workerCount > 12) paper.setAttribute("data-pdf-worker-compress", "1");
+        pdfWorkerRowRestore = true;
+      }
+      if (paper && state.taskCount >= 6) {
+        /* 合計高は常に 6×ref（ref は PDF_LOCK_FRAME_DENSITY_N=12 のみ。作業・備考の段数では枠は変わらず行数で割るだけ） */
+        const taskRefPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
+        const taskColDataPx = pdfTaskColLockTotalDataHeightPx(state.taskCount, state.remarkCount);
+        const eachTaskPx = pdfTaskColLockEachRowPx(state.taskCount, state.remarkCount);
+        paper.style.setProperty("--pdf-tasks-col-data-h", `${taskColDataPx}px`);
+        paper.style.setProperty("--pdf-task-rows-count", String(state.taskCount));
+        paper.style.setProperty("--pdf-task-row-h", `${eachTaskPx}px`);
+        paper.setAttribute("data-pdf-task-col-lock", "1");
+        if (state.taskCount >= 11) paper.setAttribute("data-pdf-task-num-dense", "1");
+        pdfTaskColRestore = true;
+      }
+      if (paper && state.remarkCount >= 5) {
+        /* 画面は通常の備考レイアウトのまま。PDF キャプチャ時だけ 5×ref で合計を固定（html2canvas クローン用に body 非依存の属性） */
+        const remarkRefPx = pdfTaskColLockRefPx(state.taskCount, state.remarkCount);
+        /* 合計は常に「5×ref×係数」（行数に依存しない）。+で6段以上でも同じ合計 px を remarkCount で均等割り */
+        const remarkColBasePx =
+          PDF_REMARK_COL_LOCK_BASE_ROWS * remarkRefPx +
+          PDF_REMARK_COL_LOCK_BASE_ROWS * PDF_REMARK_COL_LOCK_PER_ROW_BUMP_PX;
+        const remarkColDataPx = Math.round(
+          remarkColBasePx * PDF_REMARK_LOCK_HEIGHT_SCALE_WHEN_5_ROWS
+        );
+        paper.style.setProperty("--pdf-remarks-col-data-h", `${remarkColDataPx}px`);
+        paper.style.setProperty("--pdf-remark-rows-count", String(state.remarkCount));
+        paper.setAttribute("data-pdf-remark-col-lock", "1");
+        if (state.remarkCount >= 10) paper.setAttribute("data-pdf-remark-dense", "1");
+        if (state.remarkCount >= 12) paper.setAttribute("data-pdf-remark-xdense", "1");
+        pdfRemarkColRestore = true;
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      /*
+       * #paper に min-height: var(--paper-h) があると、内容より長いビットマップになり
+       * A4 contain で実効の縮小率だけ上がる。デスクトップ PDF ではキャプチャ直前だけ
+       * 高さを内容に合わせる（終了後に必ず元に戻す）。
+       */
+      let paperHRestore = null;
+      if (!useViewport && paper) {
+        paperHRestore = { minH: paper.style.minHeight, h: paper.style.height };
+        paper.style.minHeight = "0";
+        paper.style.height = "auto";
+        void paper.offsetHeight;
+        paper.style.height = `${Math.ceil(paper.scrollHeight)}px`;
+      }
+      let canvas;
+      let capScale = 3;
+      const h2cOnClone = (clonedDoc) => {
+        applyDatePdfCloneStyles(clonedDoc);
+        applyWorkerFieldsPdfCloneOverlay(clonedDoc);
+        applyTaskManHoursPdfCloneOverlay(clonedDoc);
+        applyTaskTypeDetailPdfCloneOverlay(clonedDoc);
+      };
+      try {
+        if (useViewport) {
+          /* スマホ：表示中のブラウザ画面（ビューポート）をそのまま1枚に焼く */
+          capScale = Math.min(2.5, Math.max(1.5, window.devicePixelRatio || 1) * 1.25);
+          const sx = window.scrollX;
+          const sy = window.scrollY;
+          const vw = document.documentElement.clientWidth;
+          const vh = document.documentElement.clientHeight;
+          canvas = await html2canvas(document.body, {
+            scale: capScale,
+            useCORS: true,
+            backgroundColor: "#eceff3",
+            x: sx,
+            y: sy,
+            width: vw,
+            height: vh,
+            windowWidth: document.documentElement.scrollWidth,
+            windowHeight: document.documentElement.scrollHeight,
+            ignoreElements: (el) => el.classList?.contains("workers-add-row"),
+            onclone: h2cOnClone,
+          });
+        } else {
+          canvas = await html2canvas(paper, {
+            scale: capScale,
+            useCORS: true,
+            backgroundColor: "#fff",
+            windowWidth: paper.scrollWidth,
+            windowHeight: paper.scrollHeight,
+            ignoreElements: (el) => el.classList?.contains("workers-add-row"),
+            onclone: h2cOnClone,
+          });
+        }
+      } finally {
+        if (paperHRestore && paper) {
+          paper.style.minHeight = paperHRestore.minH;
+          paper.style.height = paperHRestore.h;
+        }
+        if (paper && pdfWorkerRowRestore) {
+          paper.style.removeProperty("--pdf-worker-row-h");
+          paper.style.removeProperty("--pdf-workers-col-data-h");
+          paper.style.removeProperty("--pdf-worker-rows-per-half");
+          paper.removeAttribute("data-pdf-worker-col-lock");
+          paper.removeAttribute("data-pdf-worker-compress");
+        }
+        if (paper && pdfTaskColRestore) {
+          paper.style.removeProperty("--pdf-tasks-col-data-h");
+          paper.style.removeProperty("--pdf-task-rows-count");
+          paper.style.removeProperty("--pdf-task-row-h");
+          paper.removeAttribute("data-pdf-task-col-lock");
+          paper.removeAttribute("data-pdf-task-num-dense");
+        }
+        if (paper && pdfRemarkColRestore) {
+          paper.style.removeProperty("--pdf-remarks-col-data-h");
+          paper.style.removeProperty("--pdf-remark-rows-count");
+          paper.removeAttribute("data-pdf-remark-col-lock");
+          paper.removeAttribute("data-pdf-remark-dense");
+          paper.removeAttribute("data-pdf-remark-xdense");
+        }
+        if (paper) paper.removeAttribute("data-pdf-capture");
+        document.body.classList.remove("pdf-render");
+      }
+      const { jsPDF } = window.jspdf;
+      const pxToMm = 25.4 / 96;
+      const cssPxW = canvas.width / capScale;
+      const cssPxH = canvas.height / capScale;
+      let pdf;
+      if (useViewport) {
+        const img = canvas.toDataURL("image/png");
+        const mmW = cssPxW * pxToMm;
+        const mmH = cssPxH * pxToMm;
+        pdf = new jsPDF({ unit: "mm", format: [mmW, mmH], compress: true });
+        pdf.addImage(img, "PNG", 0, 0, mmW, mmH, undefined, "FAST");
+      } else {
+        pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        /* 上余白 6mm（指定）。下余白 0mm。左右 14mm */
+        const margin = { top: 6, right: 14, bottom: 0, left: 14 };
+        addCanvasToA4PortraitPdf(pdf, canvas, capScale, margin);
+      }
+      const blob = pdf.output("blob");
+      const d = new Date();
+      const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+      const siteEl = document.getElementById("siteName");
+      const siteRaw =
+        siteEl && "value" in siteEl ? String(siteEl.value || "").trim() : String(siteEl?.textContent || "").trim();
+      const sitePart = (() => {
+        if (!siteRaw) return "現場名未入力";
+        const t = siteRaw
+          .replace(/[\u0000-\u001f\\/*?:"<>|]/g, "_")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120)
+          .trim();
+        return t || "現場名未入力";
+      })();
+      const pdfName = `${sitePart} 作業証明書_${ymd}.pdf`;
+      return new File([blob], pdfName, { type: "application/pdf" });
+    }
+
+    document.getElementById("pdfBtn").onclick = async () => {
+      const file = await createPdfFile();
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    document.getElementById("shareBtn").onclick = async () => {
+      const file = await createPdfFile();
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "作業証明書" });
+      } else {
+        const url = URL.createObjectURL(file);
+        window.open(url, "_blank");
+      }
+    };
+
+    // signature modal
+    const sigModal = document.getElementById("sigModal");
+    const sigBody = sigModal?.querySelector(".sig-body");
+    const listsModal = document.getElementById("listsModal");
+    const listsModalBody = document.getElementById("listsModalBody");
+    const LISTS_MODAL_LABELS = {
+      companies: "会社名",
+      sites: "現場名",
+      workers: "作業員",
+      workTypes: "作業内容（区分）",
+      workSectors: "作業内容（工区）",
+      workDetails: "作業内容（詳細）",
+    };
+    /** ツールバーから開くタブ：各ボタンはこの中の項目だけ表示 */
+    const LISTS_TAB_SPEC = {
+      companies: { keys: ["companies"], title: "会社名" },
+      sites: { keys: ["sites"], title: "現場名" },
+      workers: { keys: ["workers"], title: "作業員" },
+      work: { keys: ["workTypes", "workSectors", "workDetails"], title: "作業内容" },
+    };
+    let listsModalTab = "companies";
+
+    /**
+     * 作業員タブ：所属入力に合わせ一覧を動かす。
+     * 一致→前方一致→（2文字以上なら）部分一致でヒットした行の所属名を基準に、
+     * その所属のブロック先頭行を一覧スクロール領域の上端から表示する。空入力で一覧先頭へ。
+     */
+    function scrollListsModalToWorkerCompany(companyQuery) {
+      if (!listsModalBody) return;
+      const scrollHost = listsModalBody.querySelector(".lists-modal-list-scroll");
+      const q = String(companyQuery ?? "").trim();
+      if (!q) {
+        if (scrollHost) scrollHost.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      const lis = listsModalBody.querySelectorAll("li.lists-modal-li-row[data-worker-company]");
+      let best = null;
+      let bestRank = 0;
+      for (const li of lis) {
+        const co = String(li.getAttribute("data-worker-company") || "").trim();
+        if (!co) continue;
+        let rank = 0;
+        if (co === q) rank = 3;
+        else if (co.startsWith(q)) rank = 2;
+        else if (q.length >= 2 && co.includes(q)) rank = 1;
+        if (rank > bestRank) {
+          bestRank = rank;
+          best = li;
+          if (bestRank === 3) break;
+        }
+      }
+      if (!best || bestRank === 0) return;
+      const anchorCo = String(best.getAttribute("data-worker-company") || "").trim();
+      let anchorLi = best;
+      if (anchorCo) {
+        for (const li of lis) {
+          if (String(li.getAttribute("data-worker-company") || "").trim() === anchorCo) {
+            anchorLi = li;
+            break;
+          }
+        }
+      }
+      if (scrollHost) {
+        const hostTop = scrollHost.getBoundingClientRect().top;
+        const liTop = anchorLi.getBoundingClientRect().top;
+        const nextTop = scrollHost.scrollTop + (liTop - hostTop);
+        scrollHost.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+      } else {
+        anchorLi.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+      anchorLi.classList.remove("lists-modal-li-jump-flash");
+      void anchorLi.offsetWidth;
+      anchorLi.classList.add("lists-modal-li-jump-flash");
+      const rm = () => anchorLi.classList.remove("lists-modal-li-jump-flash");
+      anchorLi.addEventListener("animationend", rm, { once: true });
+      window.setTimeout(rm, 1200);
+    }
+
+    /** リストモーダル先頭の「直接入力 + 追加」行（listKey は lists のキー） */
+    /** 入力～追加を上に固定し、下を一覧スクロール用にする（全リストタブ共通） */
+    function mountListsModalSplitShell() {
+      listsModalBody.classList.add("lists-modal-body--split");
+      const sticky = document.createElement("div");
+      sticky.className = "lists-modal-sticky";
+      const scroll = document.createElement("div");
+      scroll.className = "lists-modal-list-scroll";
+      listsModalBody.appendChild(sticky);
+      listsModalBody.appendChild(scroll);
+      return { sticky, scroll };
+    }
+
+    function mountListAddRow(container, listKey, opts) {
+      const inputId = opts.inputId || "";
+      const placeholder = opts.placeholder || "";
+      const autocomplete = opts.autocomplete || "";
+      const row = document.createElement("div");
+      row.className = "lists-modal-add-row";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      if (inputId) inp.id = inputId;
+      inp.className = "lists-modal-add-input";
+      inp.placeholder = placeholder;
+      if (autocomplete) inp.autocomplete = autocomplete;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lists-modal-add-btn";
+      btn.textContent = "追加";
+      const commit = async () => {
+        await addIfNew(listKey, inp.value);
+        inp.value = "";
+        renderListsModalBody();
+      };
+      btn.addEventListener("click", () => void commit());
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void commit();
+        }
+      });
+      row.appendChild(inp);
+      row.appendChild(btn);
+      container.appendChild(row);
+    }
+
+    function renderListsModalBody() {
+      if (!listsModalBody) return;
+      const spec = LISTS_TAB_SPEC[listsModalTab];
+      if (!spec) return;
+      listsModalBody.innerHTML = "";
+      listsModalBody.classList.remove("lists-modal-body--split");
+      let listScrollParent = listsModalBody;
+      if (listsModalTab === "companies") {
+        const { sticky, scroll } = mountListsModalSplitShell();
+        listScrollParent = scroll;
+        mountListAddRow(sticky, "companies", {
+          inputId: "listsModalCompanyInput",
+          placeholder: "会社名を入力して追加",
+          autocomplete: "organization",
+        });
+      } else if (listsModalTab === "sites") {
+        const { sticky, scroll } = mountListsModalSplitShell();
+        listScrollParent = scroll;
+        mountListAddRow(sticky, "sites", {
+          inputId: "listsModalSiteInput",
+          placeholder: "現場名を入力して追加",
+        });
+      } else if (listsModalTab === "workers") {
+        const wrap = document.createElement("div");
+        wrap.className = "lists-modal-worker-add";
+        const rowCo = document.createElement("div");
+        rowCo.className = "lists-modal-add-row lists-modal-worker-add-row";
+        const labCo = document.createElement("label");
+        labCo.className = "lists-modal-worker-add-label";
+        labCo.htmlFor = "listsModalWorkerCompanyInput";
+        labCo.textContent = "所属会社";
+        const inCo = document.createElement("input");
+        inCo.type = "text";
+        inCo.id = "listsModalWorkerCompanyInput";
+        inCo.className = "lists-modal-add-input";
+        inCo.placeholder = "所属会社を入力して追加";
+        rowCo.appendChild(labCo);
+        rowCo.appendChild(inCo);
+        let companyJumpTimer = 0;
+        inCo.addEventListener("input", () => {
+          window.clearTimeout(companyJumpTimer);
+          companyJumpTimer = window.setTimeout(() => scrollListsModalToWorkerCompany(inCo.value), 160);
+        });
+        wrap.appendChild(rowCo);
+        const rowNa = document.createElement("div");
+        rowNa.className = "lists-modal-add-row lists-modal-worker-add-row";
+        const labNa = document.createElement("label");
+        labNa.className = "lists-modal-worker-add-label";
+        labNa.htmlFor = "listsModalWorkerNameInput";
+        labNa.textContent = "作業員";
+        const inNa = document.createElement("input");
+        inNa.type = "text";
+        inNa.id = "listsModalWorkerNameInput";
+        inNa.className = "lists-modal-add-input";
+        inNa.placeholder = "氏名を入力して追加";
+        const btnW = document.createElement("button");
+        btnW.type = "button";
+        btnW.className = "lists-modal-add-btn";
+        btnW.textContent = "追加";
+        const commitWorker = async () => {
+          const co = inCo.value.trim();
+          const na = inNa.value.trim();
+          if (!na) return;
+          btnW.disabled = true;
+          try {
+            await addWorkerIfNew(co, na);
+          } finally {
+            btnW.disabled = false;
+          }
+          inCo.value = "";
+          inNa.value = "";
+          renderListsModalBody();
+        };
+        btnW.addEventListener("click", () => void commitWorker());
+        [inCo, inNa].forEach((inp) => {
+          inp.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commitWorker();
+            }
+          });
+        });
+        rowNa.appendChild(labNa);
+        rowNa.appendChild(inNa);
+        rowNa.appendChild(btnW);
+        wrap.appendChild(rowNa);
+        const { sticky, scroll } = mountListsModalSplitShell();
+        listScrollParent = scroll;
+        sticky.appendChild(wrap);
+      } else if (listsModalTab === "work") {
+        const { sticky, scroll } = mountListsModalSplitShell();
+        listScrollParent = scroll;
+        mountListAddRow(sticky, "workTypes", {
+          inputId: "listsModalWorkTypeInput",
+          placeholder: "作業内容（区分）を入力して追加",
+        });
+        mountListAddRow(sticky, "workSectors", {
+          inputId: "listsModalWorkSectorInput",
+          placeholder: "作業内容（工区）を入力して追加",
+        });
+        mountListAddRow(sticky, "workDetails", {
+          inputId: "listsModalWorkDetailInput",
+          placeholder: "作業内容（詳細）を入力して追加",
+        });
+      }
+      for (const key of spec.keys) {
+        const sec = document.createElement("section");
+        sec.className = "lists-modal-section";
+        const h = document.createElement("h3");
+        h.className = "lists-modal-section-title";
+        h.textContent = LISTS_MODAL_LABELS[key];
+        sec.appendChild(h);
+        const raw = lists[key];
+        let rows = [];
+        if (key === "workers") {
+          rows = sortWorkerEntriesForSheet(raw || []);
+        } else if (!Array.isArray(raw) || !raw.length) {
+          const p = document.createElement("p");
+          p.className = "lists-modal-empty";
+          p.textContent = "（まだありません）";
+          sec.appendChild(p);
+          listScrollParent.appendChild(sec);
+          continue;
+        } else if (key === "companies") {
+          rows = sortJapaneseStrings([...raw], { pinToTop: COMPANY_PIN_TOP, modalScriptOrder: true });
+        } else if (key === "sites") {
+          rows = sortJapaneseStrings([...raw], { modalScriptOrder: true });
+        } else if (key === "workTypes") {
+          rows = sortJapaneseStrings([...raw], { modalScriptOrder: true });
+        } else if (key === "workSectors") {
+          rows = sortJapaneseStrings([...raw], { modalScriptOrder: true });
+        } else if (key === "workDetails") {
+          rows = sortJapaneseStrings([...raw], { modalScriptOrder: true });
+        } else {
+          rows = [...raw];
+        }
+        if (key === "workers" && !rows.length) {
+          const p = document.createElement("p");
+          p.className = "lists-modal-empty";
+          p.textContent = "（まだありません）";
+          sec.appendChild(p);
+          listScrollParent.appendChild(sec);
+          continue;
+        }
+        {
+          const ul = document.createElement("ul");
+          ul.className = "lists-modal-ul lists-modal-ul-rows";
+          rows.forEach((entry) => {
+            const li = document.createElement("li");
+            li.className = "lists-modal-li-row";
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "lists-modal-li-text";
+            const delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.className = "lists-modal-li-del";
+            delBtn.textContent = "削除";
+            if (key === "workers") {
+              const w = normalizeWorkerEntry(entry);
+              li.dataset.workerCompany = w.company || "";
+              nameSpan.classList.add("lists-modal-li-worker-wrap");
+              if (w.company) {
+                const coEl = document.createElement("span");
+                coEl.className = "lists-modal-li-worker-co";
+                coEl.textContent = w.company;
+                nameSpan.appendChild(coEl);
+              }
+              const nmEl = document.createElement("span");
+              nmEl.className = "lists-modal-li-worker-name";
+              nmEl.textContent = w.name || "（氏名なし）";
+              nameSpan.appendChild(nmEl);
+              delBtn.addEventListener("click", () => {
+                removeWorker(w);
+                renderListsModalBody();
+              });
+            } else {
+              nameSpan.textContent = entry;
+              delBtn.addEventListener("click", () => {
+                removeListItem(key, entry);
+                renderListsModalBody();
+              });
+            }
+            li.appendChild(nameSpan);
+            li.appendChild(delBtn);
+            ul.appendChild(li);
+          });
+          sec.appendChild(ul);
+        }
+        listScrollParent.appendChild(sec);
+      }
+      const focusInputId =
+        listsModalTab === "companies"
+          ? "listsModalCompanyInput"
+          : listsModalTab === "sites"
+            ? "listsModalSiteInput"
+            : listsModalTab === "workers"
+              ? "listsModalWorkerCompanyInput"
+              : listsModalTab === "work"
+                ? "listsModalWorkTypeInput"
+                : "";
+      if (focusInputId) {
+        requestAnimationFrame(() => {
+          document.getElementById(focusInputId)?.focus();
+        });
+      }
+    }
+
+    function syncListsToolbarTabActive(tabKey) {
+      document.querySelectorAll(".toolbar [data-lists-tab]").forEach((btn) => {
+        btn.classList.toggle("lists-tab-active", Boolean(tabKey) && btn.getAttribute("data-lists-tab") === tabKey);
+      });
+    }
+
+    async function openListsModal(tabKey) {
+      if (!listsModal) return;
+      const k = tabKey && LISTS_TAB_SPEC[tabKey] ? tabKey : "companies";
+      listsModalTab = k;
+      await warmModalListSortYomiCacheForTab(k);
+      if (k === "work") {
+        normalizeWorkContentListsPersisted();
+      } else if (k === "sites") {
+        lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+        saveLists();
+      } else if (k === "companies") {
+        lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+          pinToTop: COMPANY_PIN_TOP,
+          modalScriptOrder: true,
+        });
+        saveLists();
+      }
+      const titleEl = document.getElementById("listsModalTitle");
+      if (titleEl) titleEl.textContent = LISTS_TAB_SPEC[k].title;
+      if (fieldSheet.classList.contains("active")) closeFieldSheet();
+      if (sigModal?.classList.contains("active")) {
+        sigModal.classList.remove("active");
+        closeFieldSheet();
+      }
+      renderListsModalBody();
+      listsModal.classList.add("active");
+      listsModal.setAttribute("aria-hidden", "false");
+      syncListsToolbarTabActive(k);
+    }
+
+    function closeListsModal() {
+      if (!listsModal) return;
+      listsModal.classList.remove("active");
+      listsModal.setAttribute("aria-hidden", "true");
+      syncListsToolbarTabActive(null);
+    }
+
+    document.querySelector(".toolbar")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-lists-tab]");
+      if (!btn) return;
+      const tab = btn.getAttribute("data-lists-tab");
+      if (tab && LISTS_TAB_SPEC[tab]) void openListsModal(tab);
+    });
+    document.getElementById("listsModalClose")?.addEventListener("click", closeListsModal);
+    listsModal?.querySelector(".lists-modal-backdrop")?.addEventListener("click", closeListsModal);
+    const sigCanvas = document.getElementById("signatureCanvas");
+    const sctx = sigCanvas.getContext("2d", { alpha: true });
+    let drawing = false, lx = 0, ly = 0;
+    function resizeCanvas() {
+      const r = sigCanvas.getBoundingClientRect();
+      sigCanvas.width = r.width; sigCanvas.height = r.height;
+      sctx.globalAlpha = 1;
+      sctx.shadowBlur = 0;
+      sctx.lineWidth = 5;
+      sctx.lineCap = "round";
+      sctx.lineJoin = "round";
+      sctx.strokeStyle = "#000000";
+      /* 透明背景の PNG で保存（画面上は #signatureCanvas の白背景が見える） */
+      sctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+      if (state.signatureData) {
+        const img = new Image();
+        img.onload = () => sctx.drawImage(img, 0, 0, sigCanvas.width, sigCanvas.height);
+        img.src = state.signatureData;
+      }
+    }
+    function pos(ev) { const r = sigCanvas.getBoundingClientRect(); const p = ev.touches ? ev.touches[0] : ev; return { x: p.clientX - r.left, y: p.clientY - r.top }; }
+    function start(ev) { drawing = true; const p = pos(ev); lx = p.x; ly = p.y; }
+    function move(ev) { if (!drawing) return; ev.preventDefault(); const p = pos(ev); sctx.beginPath(); sctx.moveTo(lx, ly); sctx.lineTo(p.x, p.y); sctx.stroke(); lx = p.x; ly = p.y; }
+    function end() { drawing = false; }
+
+    const stampSignSlot = document.getElementById("stampSignSlot");
+    function refreshSignSlotClass() {
+      if (stampSignSlot) stampSignSlot.classList.toggle("has-signature", !!state.signatureData);
+    }
+    function closeSignModalAsCancel() {
+      if (!sigModal?.classList.contains("active")) return;
+      sigModal.classList.remove("active");
+      closeFieldSheet();
+    }
+    /* 記入シートと同様：パネル外（半透明の外側）をタップでキャンセル */
+    sigModal?.addEventListener("pointerdown", (e) => {
+      if (!sigModal.classList.contains("active")) return;
+      if (sigBody && sigBody.contains(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeSignModalAsCancel();
+    });
+    document.getElementById("sigCancelBtn").onclick = closeSignModalAsCancel;
+    document.getElementById("sigClearBtn").onclick = () => {
+      sctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+    };
+    document.getElementById("sigSaveBtn").onclick = () => {
+      state.signatureData = sigCanvas.toDataURL("image/png");
+      document.getElementById("signImage").src = state.signatureData;
+      refreshSignSlotClass();
+      sigModal.classList.remove("active");
+      closeFieldSheet();
+    };
+    sigCanvas.addEventListener("mousedown", start); sigCanvas.addEventListener("mousemove", move); window.addEventListener("mouseup", end);
+    sigCanvas.addEventListener("touchstart", start, { passive: false }); sigCanvas.addEventListener("touchmove", move, { passive: false }); sigCanvas.addEventListener("touchend", end);
+
+    function syncFooterColWidth() {
+      const root = document.querySelector(".footer > div:first-child");
+      const addr = root?.querySelector(".footer-line-addr");
+      const footer = document.querySelector(".footer");
+      if (!root || !addr || !footer) return;
+      root.style.width = "";
+      void root.offsetWidth;
+      /* 親の幅＝住所1行の実幅（計測中だけ住所を max-content にして圧縮されないようにする） */
+      const prevAddrW = addr.style.width;
+      addr.style.width = "max-content";
+      void addr.offsetWidth;
+      let w = Math.ceil(addr.getBoundingClientRect().width);
+      addr.style.width = prevAddrW || "";
+      void root.offsetWidth;
+      const maxW = Math.floor(footer.getBoundingClientRect().width - 32);
+      if (maxW > 0 && w > maxW) w = maxW;
+      if (w > 0) root.style.width = w + "px";
+    }
+
+    window.addEventListener("resize", () => {
+      if (sigModal.classList.contains("active")) resizeCanvas();
+      syncFooterColWidth();
+    });
+
+    const FOOTER_LOGO_KEY = "work-cert-footer-logo-v1";
+    /** index.html と同じフォルダに置いた PNG（相対パス）を最優先で表示 */
+    const FOOTER_LOGO_FILE = "logo.png";
+    const footerCompanyLogo = document.getElementById("footerCompanyLogo");
+    const footerLogoWrap = document.getElementById("footerLogoWrap");
+
+    function refreshFooterLogoClass() {
+      if (!footerLogoWrap || !footerCompanyLogo) return;
+      const src = footerCompanyLogo.getAttribute("src");
+      const ok = !!(src && String(src).trim());
+      footerLogoWrap.classList.toggle("has-img", ok);
+    }
+
+    function applyFooterLogoStorageFallback() {
+      if (!footerCompanyLogo) return;
+      try {
+        const d = localStorage.getItem(FOOTER_LOGO_KEY);
+        if (d && d.startsWith("data:image")) {
+          footerCompanyLogo.src = d;
+          refreshFooterLogoClass();
+          return;
+        }
+      } catch (_) {}
+      footerCompanyLogo.removeAttribute("src");
+      refreshFooterLogoClass();
+    }
+
+    function loadFooterLogo() {
+      if (!footerCompanyLogo || !footerLogoWrap) return;
+      const img = footerCompanyLogo;
+      img.onload = () => {
+        img.onload = null;
+        img.onerror = null;
+        refreshFooterLogoClass();
+      };
+      img.onerror = () => {
+        img.onload = null;
+        img.onerror = null;
+        applyFooterLogoStorageFallback();
+      };
+      img.src = FOOTER_LOGO_FILE;
+    }
+
+    setTodayToDateInputs();
+    loadLists();
+    resetGridRowsToDefault();
+    void refreshStoredWorkerReadingsFromKuroshiro().catch(() => {});
+    loadFooterLogo();
+
+    adjustDensity();
+    buildWorkers();
+    buildTasks();
+    buildRemarks();
+    refreshWeekday();
+    requestAnimationFrame(() => {
+      syncFooterColWidth();
+      requestAnimationFrame(syncFooterColWidth);
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(syncFooterColWidth).catch(() => {});
+    }
+  </script>
+</body>
+</html>
