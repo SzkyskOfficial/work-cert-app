@@ -2929,6 +2929,7 @@
   <script>
     const LISTS_KEY = "work-cert-saved-items-v1";
     const SHARE_CODE_KEY = "work-cert-share-code-v1";
+    const SHARED_SNAPSHOT_KEY_PREFIX = "work-cert-shared-snapshot-v1:";
     const lists = { companies: [], sites: [], workers: [], workTypes: [], workSectors: [], workDetails: [] };
     const DEFAULT_GRID_ROWS = { workerCount: 12, taskCount: 6, remarkCount: 5 };
     const state = { ...DEFAULT_GRID_ROWS, signatureData: "", shift: "day" };
@@ -5319,6 +5320,23 @@
         return "";
       }
     }
+    function sharedSnapshotStorageKey(code) {
+      const c = normalizeShareCode(code);
+      return SHARED_SNAPSHOT_KEY_PREFIX + (c || "default");
+    }
+    function saveSharedSnapshotToLocal(code, payload) {
+      try {
+        localStorage.setItem(sharedSnapshotStorageKey(code), JSON.stringify(payload || {}));
+      } catch (_) {}
+    }
+    function loadSharedSnapshotFromLocal(code) {
+      try {
+        const t = localStorage.getItem(sharedSnapshotStorageKey(code));
+        return t ? JSON.parse(t) : null;
+      } catch (_) {
+        return null;
+      }
+    }
     function setStoredShareCode(code) {
       try {
         if (code) localStorage.setItem(SHARE_CODE_KEY, code);
@@ -5459,6 +5477,7 @@
       if (!payload || typeof payload !== "object") return;
       sharedSyncPaused = true;
       try {
+        saveSharedSnapshotToLocal(sharedCurrentCode, payload);
         applySharedLists(payload.lists);
         const nextState = payload.state || {};
         state.workerCount = Number(nextState.workerCount) || DEFAULT_GRID_ROWS.workerCount;
@@ -5541,6 +5560,7 @@
         return;
       }
       sharedLastPushedJson = json;
+      saveSharedSnapshotToLocal(sharedCurrentCode, payload);
       try {
         await sharedDocRef.set({
           code: sharedCurrentCode,
@@ -5616,6 +5636,15 @@
       }
 
       if (!sharedCurrentCode) return;
+      /* まず端末内の最後の共有スナップショットで即復元（オフラインでも表示できる） */
+      const localPayload = loadSharedSnapshotFromLocal(sharedCurrentCode);
+      if (localPayload) {
+        runWhenIdle(() => {
+          try {
+            applySharedSnapshot(localPayload);
+          } catch (_) {}
+        }, 1500);
+      }
       await startSharedSyncIfNeeded();
       await connectSharedDocument();
     }
