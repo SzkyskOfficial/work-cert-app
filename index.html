@@ -2994,9 +2994,11 @@
     }
     async function ensureFirebaseLibs() {
       if (window.firebase?.initializeApp && window.firebase?.auth && window.firebase?.firestore) return;
-      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
-      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js");
-      await loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+      await Promise.all([
+        loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"),
+        loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"),
+        loadScriptOnce("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"),
+      ]);
     }
 
     const wLeft = document.getElementById("wLeft");
@@ -5438,7 +5440,6 @@
     function scheduleLocalSharedSnapshotSave() {
       if (!sharedCurrentCode) return;
       if (sharedSyncPaused) return;
-      showSharedSyncToast("データ保存中", "warn", 0);
       if (sharedLocalSaveTimer) clearTimeout(sharedLocalSaveTimer);
       sharedLocalSaveTimer = window.setTimeout(() => {
         sharedLocalSaveTimer = 0;
@@ -5449,6 +5450,7 @@
         }
         runWhenIdle(() => {
           try {
+            showSharedSyncToast("データ保存中", "warn", 900);
             const payload = captureAppSnapshot();
             saveSharedSnapshotToLocal(sharedCurrentCode, payload);
             showSharedSyncToast("データ保存完了", "success", 1200);
@@ -5661,7 +5663,7 @@
         scheduleSharedPush();
         return;
       }
-      showSharedSyncToast("データ保存中", "warn", 0);
+      showSharedSyncToast("データ保存中", "warn", 900);
       sharedPushInflight = true;
       const payload = captureAppSnapshot();
       const json = JSON.stringify(payload);
@@ -5688,7 +5690,7 @@
     }
     async function connectSharedDocument() {
       if (!sharedSyncReady || !sharedCurrentCode) return;
-      showSharedSyncToast("データ読み込み中", "warn", 0);
+      showSharedSyncToast("共有データ受信中", "warn", 1200);
       const db = firebase.firestore();
       sharedDocRef = db.collection("sharedDocs").doc(sharedCurrentCode);
       sharedUnsub = sharedDocRef.onSnapshot((snap) => {
@@ -5696,7 +5698,7 @@
         const data = snap.data();
         const payload = data?.payload;
         if (!payload) {
-          void pushSharedSnapshot();
+          scheduleSharedPush();
           return;
         }
         const json = JSON.stringify(payload);
@@ -5719,12 +5721,13 @@
         console.warn("共有受信に失敗しました", err);
         showSharedSyncToast("データ読み込み失敗", "error", 1600);
       });
-      void pushSharedSnapshot();
+      scheduleSharedPush();
     }
     async function startSharedSyncIfNeeded() {
       if (sharedSyncReady) return;
-      showSharedSyncToast("データ読み込み中", "warn", 0);
+      showSharedSyncToast("共有に接続中", "warn", 1200);
       await ensureFirebaseLibs();
+      await new Promise((r) => setTimeout(r, 0));
       firebase.initializeApp(FIREBASE_CONFIG);
       await firebase.auth().signInAnonymously();
       sharedSyncReady = true;
