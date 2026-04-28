@@ -2,8 +2,7 @@
 <html lang="ja" data-rev="rebuild-layout-v3">
 <head>
   <meta charset="UTF-8" />
-  <!-- スマホでPCレイアウト(980px)を必ず収めるため、viewport幅を固定（ブラウザ側で自動縮小） -->
-  <meta id="viewportMeta" name="viewport" content="width=980, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <meta id="viewportMeta" name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>作業証明書アプリ (rebuild-layout-v3)</title>
   <style>
     :root {
@@ -76,6 +75,7 @@
     }
     body.pdf-render .paper-scale-inner {
       transform: none !important;
+      zoom: 1 !important;
     }
     body.pdf-render .paper-scale-outer {
       height: auto !important;
@@ -4365,19 +4365,13 @@
       const inner = document.querySelector(".paper-scale-inner");
       if (!paper || !outer || !inner) return;
       if (document.body.classList.contains("pdf-render")) return;
-      /* iOS Safari は transform 縮小でタップ不能になり得るため、viewport-fit（applyIosSafariViewportFit）側に寄せる */
       const ua = navigator.userAgent || "";
       const isIOS = /iP(hone|ad|od)/.test(ua);
       const isSafari = /Safari\//.test(ua) && !/CriOS\//.test(ua) && !/FxiOS\//.test(ua);
-      if (isIOS && isSafari) {
-        inner.style.removeProperty("transform");
-        inner.style.removeProperty("width");
-        inner.style.removeProperty("transform-origin");
-        return;
-      }
       const isPhoneLike = window.matchMedia("(max-width: 900px)").matches;
       if (!isPhoneLike) {
         inner.style.removeProperty("transform");
+        inner.style.removeProperty("zoom");
         inner.style.removeProperty("width");
         inner.style.removeProperty("transform-origin");
         return;
@@ -4386,8 +4380,16 @@
       const pw = Math.max(1, paper.scrollWidth || paper.offsetWidth);
       const s = Math.min(1, availW / pw);
       inner.style.width = pw + "px";
-      inner.style.transform = "scale(" + s + ")";
-      inner.style.transformOrigin = "top center";
+      if (isIOS && isSafari) {
+        /* iOS Safari: transform 下の入力がタップ不能になり得るため zoom を使う */
+        inner.style.removeProperty("transform");
+        inner.style.removeProperty("transform-origin");
+        inner.style.zoom = String(s);
+      } else {
+        inner.style.removeProperty("zoom");
+        inner.style.transform = "scale(" + s + ")";
+        inner.style.transformOrigin = "top center";
+      }
     }
 
     function initPaperFitScaleWatching() {
