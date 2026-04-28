@@ -2854,11 +2854,11 @@
   </div>
 
   <div id="listsModal" class="lists-modal" aria-hidden="true">
-    <div class="lists-modal-backdrop" aria-hidden="true"></div>
+    <div class="lists-modal-backdrop" aria-hidden="true" onclick="window.__closeListsModal && window.__closeListsModal()"></div>
     <div class="lists-modal-panel" role="dialog" aria-modal="true" aria-labelledby="listsModalTitle">
       <div class="lists-modal-head">
         <span id="listsModalTitle">会社名</span>
-        <button type="button" id="listsModalClose">閉じる</button>
+        <button type="button" id="listsModalClose" onclick="window.__closeListsModal && window.__closeListsModal()">閉じる</button>
       </div>
       <div id="listsModalBody" class="lists-modal-body"></div>
     </div>
@@ -4906,6 +4906,7 @@
         closeFieldSheet();
       }
       renderListsModalBody();
+      listsModal.style.removeProperty("display");
       listsModal.classList.add("active");
       listsModal.setAttribute("aria-hidden", "false");
       syncListsToolbarTabActive(k);
@@ -4942,6 +4943,9 @@
       }
       listsModal.classList.remove("active");
       listsModal.setAttribute("aria-hidden", "true");
+      listsModal.style.display = "none";
+      if (fieldSheet?.classList.contains("active")) closeFieldSheet();
+      if (sigModal?.classList.contains("active")) sigModal.classList.remove("active");
       syncListsToolbarTabActive(null);
     }
 
@@ -5019,6 +5023,7 @@
         closeListsModal();
       }
     }, { capture: true, passive: false });
+    window.__closeListsModal = closeListsModal;
     /* 端末差対策: click しか来ない環境でも、モーダル外タップで必ず閉じる */
     document.addEventListener("click", (e) => {
       if (!listsModal?.classList.contains("active")) return;
