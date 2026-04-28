@@ -29,6 +29,37 @@
       text-size-adjust: 100%;
     }
     body { margin: 0; background: #eceff3; font-family: "Yu Gothic UI", "Meiryo", sans-serif; }
+    .shared-sync-toast {
+      position: fixed;
+      right: 14px;
+      top: 14px;
+      z-index: 400;
+      max-width: min(86vw, 320px);
+      padding: 9px 12px;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.35;
+      background: rgba(25, 25, 28, 0.92);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.26);
+      opacity: 0;
+      transform: translateY(-6px);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .shared-sync-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .shared-sync-toast.success {
+      background: rgba(14, 120, 57, 0.95);
+    }
+    .shared-sync-toast.warn {
+      background: rgba(163, 91, 15, 0.95);
+    }
+    .shared-sync-toast.error {
+      background: rgba(170, 34, 34, 0.95);
+    }
     .app { max-width: 1180px; margin: 0 auto; padding: 16px; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
     .toolbar button[data-lists-tab]:focus-visible {
@@ -2924,6 +2955,7 @@
       </div>
     </div>
   </div>
+  <div id="sharedSyncToast" class="shared-sync-toast" aria-live="polite" aria-atomic="true"></div>
 
   <!-- 初回表示を速くするため、PDF/Firebase は必要時に遅延読み込み（JS内で動的ロード） -->
   <script>
@@ -5314,6 +5346,34 @@
     let sharedUserActiveUntil = 0;
     let sharedLocalSaveTimer = 0;
     let sharedConnectTimer = 0;
+    let sharedToastHideTimer = 0;
+    let sharedLastToastMessage = "";
+    let sharedInitialRemoteLoaded = false;
+    const sharedSyncToastEl = document.getElementById("sharedSyncToast");
+
+    function showSharedSyncToast(message, kind = "", holdMs = 1300) {
+      if (!sharedSyncToastEl || !message) return;
+      const msg = String(message);
+      const tone = String(kind || "");
+      if (sharedToastHideTimer) {
+        clearTimeout(sharedToastHideTimer);
+        sharedToastHideTimer = 0;
+      }
+      if (sharedLastToastMessage !== msg || !sharedSyncToastEl.classList.contains("show")) {
+        sharedSyncToastEl.textContent = msg;
+        sharedLastToastMessage = msg;
+      }
+      sharedSyncToastEl.classList.remove("success", "warn", "error");
+      if (tone === "success" || tone === "warn" || tone === "error") {
+        sharedSyncToastEl.classList.add(tone);
+      }
+      sharedSyncToastEl.classList.add("show");
+      if (holdMs <= 0) return;
+      sharedToastHideTimer = window.setTimeout(() => {
+        sharedSyncToastEl.classList.remove("show");
+        sharedToastHideTimer = 0;
+      }, holdMs);
+    }
 
     function getStoredShareCode() {
       try {
@@ -5378,6 +5438,7 @@
     function scheduleLocalSharedSnapshotSave() {
       if (!sharedCurrentCode) return;
       if (sharedSyncPaused) return;
+      showSharedSyncToast("データ保存中", "warn", 0);
       if (sharedLocalSaveTimer) clearTimeout(sharedLocalSaveTimer);
       sharedLocalSaveTimer = window.setTimeout(() => {
         sharedLocalSaveTimer = 0;
@@ -5390,6 +5451,7 @@
           try {
             const payload = captureAppSnapshot();
             saveSharedSnapshotToLocal(sharedCurrentCode, payload);
+            showSharedSyncToast("データ保存完了", "success", 1200);
           } catch (_) {}
         }, 2500);
       }, 1200);
@@ -5452,6 +5514,7 @@
       sharedDocRef = null;
       sharedLastAppliedJson = "";
       sharedLastPushedJson = "";
+      sharedInitialRemoteLoaded = false;
       if (sharedSyncReady) await connectSharedDocument();
       return true;
     }
@@ -5598,11 +5661,13 @@
         scheduleSharedPush();
         return;
       }
+      showSharedSyncToast("データ保存中", "warn", 0);
       sharedPushInflight = true;
       const payload = captureAppSnapshot();
       const json = JSON.stringify(payload);
       if (json === sharedLastPushedJson) {
         sharedPushInflight = false;
+        showSharedSyncToast("データ保存完了", "success", 900);
         return;
       }
       sharedLastPushedJson = json;
@@ -5613,14 +5678,17 @@
           payload,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
+        showSharedSyncToast("データ保存完了", "success", 1200);
       } catch (err) {
         console.warn("共有保存に失敗しました", err);
+        showSharedSyncToast("データ保存失敗", "error", 1600);
       } finally {
         sharedPushInflight = false;
       }
     }
     async function connectSharedDocument() {
       if (!sharedSyncReady || !sharedCurrentCode) return;
+      showSharedSyncToast("データ読み込み中", "warn", 0);
       const db = firebase.firestore();
       sharedDocRef = db.collection("sharedDocs").doc(sharedCurrentCode);
       sharedUnsub = sharedDocRef.onSnapshot((snap) => {
@@ -5635,17 +5703,27 @@
         if (json === sharedLastAppliedJson) return;
         if (json === sharedLastPushedJson) {
           sharedLastAppliedJson = json;
+          if (!sharedInitialRemoteLoaded) {
+            sharedInitialRemoteLoaded = true;
+            showSharedSyncToast("データ読み込み完了", "success", 1200);
+          }
           return;
         }
         sharedLastAppliedJson = json;
         scheduleApplySharedSnapshot(payload);
+        if (!sharedInitialRemoteLoaded) {
+          sharedInitialRemoteLoaded = true;
+          showSharedSyncToast("データ読み込み完了", "success", 1200);
+        }
       }, (err) => {
         console.warn("共有受信に失敗しました", err);
+        showSharedSyncToast("データ読み込み失敗", "error", 1600);
       });
       void pushSharedSnapshot();
     }
     async function startSharedSyncIfNeeded() {
       if (sharedSyncReady) return;
+      showSharedSyncToast("データ読み込み中", "warn", 0);
       await ensureFirebaseLibs();
       firebase.initializeApp(FIREBASE_CONFIG);
       await firebase.auth().signInAnonymously();
