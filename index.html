@@ -5296,7 +5296,7 @@
       });
       setTimeout(() => {
         void checkForRemoteUpdate();
-      }, 2500);
+      }, 10000);
     }
 
     let sharedSyncReady = false;
@@ -5550,10 +5550,18 @@
       await connectSharedDocument();
     }
 
+    function runWhenIdle(fn, timeout = 3000) {
+      if (typeof fn !== "function") return;
+      if ("requestIdleCallback" in window) window.requestIdleCallback(() => fn(), { timeout });
+      else setTimeout(fn, Math.min(timeout, 1500));
+    }
+
     setTodayToDateInputs();
     loadLists();
     resetGridRowsToDefault();
-    void refreshStoredWorkerReadingsFromKuroshiro().catch(() => {});
+    runWhenIdle(() => {
+      void refreshStoredWorkerReadingsFromKuroshiro().catch(() => {});
+    }, 5000);
     loadFooterLogo();
 
     adjustDensity();
