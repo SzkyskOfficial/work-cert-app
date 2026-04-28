@@ -24,6 +24,10 @@
       --header-col-stamp: 146px;
     }
     * { box-sizing: border-box; }
+    html {
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
     body { margin: 0; background: #eceff3; font-family: "Yu Gothic UI", "Meiryo", sans-serif; }
     .app { max-width: 1180px; margin: 0 auto; padding: 16px; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -36,7 +40,10 @@
       outline-offset: 2px;
       box-shadow: 0 0 0 1px rgba(59, 125, 209, 0.35);
     }
-    button, input, select, textarea { font-family: inherit; }
+    button, input, select, textarea {
+      font-family: inherit;
+      touch-action: manipulation;
+    }
     button { padding: 7px 10px; }
     .paper-wrap {
       background: #fff;
@@ -2399,7 +2406,7 @@
     .lists-modal {
       position: fixed;
       inset: 0;
-      z-index: 190;
+      z-index: 260;
       display: none;
       align-items: flex-start;
       justify-content: center;
@@ -2414,6 +2421,7 @@
       inset: 0;
       background: rgba(0, 0, 0, 0.5);
       cursor: pointer;
+      touch-action: manipulation;
     }
     .lists-modal-panel {
       position: relative;
@@ -2547,7 +2555,8 @@
       flex: 1;
       min-width: 160px;
       font-family: inherit;
-      font-size: 15px;
+      /* iOS Safari: 16px 未満だとフォーカス時に画面拡大される */
+      font-size: 16px;
       padding: 8px 10px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
@@ -4944,24 +4953,29 @@
     });
     const listsModalCloseBtn = document.getElementById("listsModalClose");
     const listsModalBackdrop = listsModal?.querySelector(".lists-modal-backdrop");
+    const listsModalPanel = listsModal?.querySelector(".lists-modal-panel");
     listsModalCloseBtn?.addEventListener("click", closeListsModal);
     listsModalBackdrop?.addEventListener("click", closeListsModal);
     /* スマホで click が取りこぼされる場合に備えて pointerdown でも閉じる */
     listsModalCloseBtn?.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      e.stopPropagation();
       closeListsModal();
     });
     listsModalBackdrop?.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      e.stopPropagation();
       closeListsModal();
     });
     /* iOS系で pointer/click の取りこぼしが出る端末向けに touchend も受ける */
     listsModalCloseBtn?.addEventListener("touchend", (e) => {
       e.preventDefault();
+      e.stopPropagation();
       closeListsModal();
     }, { passive: false });
     listsModalBackdrop?.addEventListener("touchend", (e) => {
       e.preventDefault();
+      e.stopPropagation();
       closeListsModal();
     }, { passive: false });
     /*
@@ -4984,6 +4998,36 @@
         closeListsModal();
       }
     }, { capture: true, passive: false });
+    /* モーダル外（パネル外）タップでも閉じる */
+    listsModal?.addEventListener("pointerdown", (e) => {
+      if (!listsModal.classList.contains("active")) return;
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (listsModalPanel && !listsModalPanel.contains(t)) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeListsModal();
+      }
+    }, true);
+    listsModal?.addEventListener("touchstart", (e) => {
+      if (!listsModal.classList.contains("active")) return;
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (listsModalPanel && !listsModalPanel.contains(t)) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeListsModal();
+      }
+    }, { capture: true, passive: false });
+    /* 端末差対策: click しか来ない環境でも、モーダル外タップで必ず閉じる */
+    document.addEventListener("click", (e) => {
+      if (!listsModal?.classList.contains("active")) return;
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (listsModalPanel && !listsModalPanel.contains(t)) {
+        closeListsModal();
+      }
+    }, true);
     const sigCanvas = document.getElementById("signatureCanvas");
     const sctx = sigCanvas.getContext("2d", { alpha: true });
     let drawing = false, lx = 0, ly = 0;
