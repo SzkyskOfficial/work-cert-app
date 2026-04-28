@@ -3085,6 +3085,8 @@
         } catch (_) {
           modalListSortYomiCache.set(s, syncYomiKanaOnly(s) || s);
         }
+        /** 連続 await でモバイルの描画・タップが詰まるのを避ける */
+        await new Promise((r) => setTimeout(r, 0));
       }
     }
     async function warmModalListSortYomiCacheForTab(tabKey) {
@@ -3177,7 +3179,7 @@
       persistWorkersSorted();
       saveLists();
     }
-    async function addIfNew(key, val) {
+    function addIfNew(key, val) {
       if (!key || String(key).startsWith("_")) return;
       if (key === "workers") {
         const v = String(val || "").trim();
@@ -3191,7 +3193,6 @@
       if (!Array.isArray(arr)) return;
       if (!arr.includes(v)) {
         arr.push(v);
-        await warmModalListSortYomiCacheForStrings([v]);
         if (key === "companies") {
           lists.companies = sortJapaneseStrings([...lists.companies], {
             pinToTop: COMPANY_PIN_TOP,
@@ -3207,6 +3208,27 @@
           lists.workDetails = sortJapaneseStrings([...lists.workDetails], { modalScriptOrder: true });
         }
         saveLists();
+        /** 読みキャッシュは Kuroshiro 取得で遅くなり得るため await しない（完了後に再ソート） */
+        void warmModalListSortYomiCacheForStrings([v])
+          .then(() => {
+            if (key === "companies") {
+              lists.companies = sortJapaneseStrings([...lists.companies], {
+                pinToTop: COMPANY_PIN_TOP,
+                modalScriptOrder: true,
+              });
+            } else if (key === "sites") {
+              lists.sites = sortJapaneseStrings([...lists.sites], { modalScriptOrder: true });
+            } else if (key === "workTypes") {
+              lists.workTypes = sortJapaneseStrings([...lists.workTypes], { modalScriptOrder: true });
+            } else if (key === "workSectors") {
+              lists.workSectors = sortJapaneseStrings([...lists.workSectors], { modalScriptOrder: true });
+            } else if (key === "workDetails") {
+              lists.workDetails = sortJapaneseStrings([...lists.workDetails], { modalScriptOrder: true });
+            }
+            saveLists();
+            if (listsModal?.classList.contains("active")) renderListsModalBody();
+          })
+          .catch(() => {});
       }
     }
     function removeListItem(key, val) {
@@ -4593,16 +4615,16 @@
       btn.type = "button";
       btn.className = "lists-modal-add-btn";
       btn.textContent = "追加";
-      const commit = async () => {
-        await addIfNew(listKey, inp.value);
+      const commit = () => {
+        addIfNew(listKey, inp.value);
         inp.value = "";
         renderListsModalBody();
       };
-      btn.addEventListener("click", () => void commit());
+      btn.addEventListener("click", () => commit());
       inp.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          void commit();
+          commit();
         }
       });
       row.appendChild(inp);
@@ -4822,11 +4844,10 @@
       });
     }
 
-    async function openListsModal(tabKey) {
+    function openListsModal(tabKey) {
       if (!listsModal) return;
       const k = tabKey && LISTS_TAB_SPEC[tabKey] ? tabKey : "companies";
       listsModalTab = k;
-      await warmModalListSortYomiCacheForTab(k);
       if (k === "work") {
         normalizeWorkContentListsPersisted();
       } else if (k === "sites") {
@@ -4850,6 +4871,25 @@
       listsModal.classList.add("active");
       listsModal.setAttribute("aria-hidden", "false");
       syncListsToolbarTabActive(k);
+      /** 読みキャッシュは非同期のみ。モーダルは先に表示し、完了後に並び替えて再描画 */
+      void warmModalListSortYomiCacheForTab(k)
+        .then(() => {
+          if (!listsModal?.classList.contains("active") || listsModalTab !== k) return;
+          if (k === "work") {
+            normalizeWorkContentListsPersisted();
+          } else if (k === "sites") {
+            lists.sites = sortJapaneseStrings(dedupeStringList(lists.sites), { modalScriptOrder: true });
+            saveLists();
+          } else if (k === "companies") {
+            lists.companies = sortJapaneseStrings(dedupeStringList(lists.companies), {
+              pinToTop: COMPANY_PIN_TOP,
+              modalScriptOrder: true,
+            });
+            saveLists();
+          }
+          renderListsModalBody();
+        })
+        .catch(() => {});
     }
 
     function closeListsModal() {
@@ -4863,7 +4903,7 @@
       const btn = e.target.closest("[data-lists-tab]");
       if (!btn) return;
       const tab = btn.getAttribute("data-lists-tab");
-      if (tab && LISTS_TAB_SPEC[tab]) void openListsModal(tab);
+      if (tab && LISTS_TAB_SPEC[tab]) openListsModal(tab);
     });
     document.getElementById("listsModalClose")?.addEventListener("click", closeListsModal);
     listsModal?.querySelector(".lists-modal-backdrop")?.addEventListener("click", closeListsModal);
