@@ -4566,6 +4566,7 @@
       work: { keys: ["workTypes", "workSectors", "workDetails"], title: "作業内容" },
     };
     let listsModalTab = "companies";
+    let listsModalFocusRaf = 0;
 
     /**
      * 作業員タブ：所属入力に合わせ一覧を動かす。
@@ -4869,7 +4870,10 @@
                 ? "listsModalWorkTypeInput"
                 : "";
       if (focusInputId) {
-        requestAnimationFrame(() => {
+        if (listsModalFocusRaf) cancelAnimationFrame(listsModalFocusRaf);
+        listsModalFocusRaf = requestAnimationFrame(() => {
+          listsModalFocusRaf = 0;
+          if (!listsModal?.classList.contains("active")) return;
           document.getElementById(focusInputId)?.focus();
         });
       }
@@ -4931,6 +4935,14 @@
 
     function closeListsModal() {
       if (!listsModal) return;
+      if (listsModalFocusRaf) {
+        cancelAnimationFrame(listsModalFocusRaf);
+        listsModalFocusRaf = 0;
+      }
+      const ae = document.activeElement;
+      if (ae && listsModal.contains(ae) && typeof ae.blur === "function") {
+        ae.blur();
+      }
       listsModal.classList.remove("active");
       listsModal.setAttribute("aria-hidden", "true");
       syncListsToolbarTabActive(null);
@@ -4942,8 +4954,19 @@
       const tab = btn.getAttribute("data-lists-tab");
       if (tab && LISTS_TAB_SPEC[tab]) openListsModal(tab);
     });
-    document.getElementById("listsModalClose")?.addEventListener("click", closeListsModal);
-    listsModal?.querySelector(".lists-modal-backdrop")?.addEventListener("click", closeListsModal);
+    const listsModalCloseBtn = document.getElementById("listsModalClose");
+    const listsModalBackdrop = listsModal?.querySelector(".lists-modal-backdrop");
+    listsModalCloseBtn?.addEventListener("click", closeListsModal);
+    listsModalBackdrop?.addEventListener("click", closeListsModal);
+    /* スマホで click が取りこぼされる場合に備えて pointerdown でも閉じる */
+    listsModalCloseBtn?.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      closeListsModal();
+    });
+    listsModalBackdrop?.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      closeListsModal();
+    });
     const sigCanvas = document.getElementById("signatureCanvas");
     const sctx = sigCanvas.getContext("2d", { alpha: true });
     let drawing = false, lx = 0, ly = 0;
