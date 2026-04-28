@@ -5487,30 +5487,43 @@
       });
       void pushSharedSnapshot();
     }
-    async function initSharedSync() {
+    async function startSharedSyncIfNeeded() {
+      if (sharedSyncReady) return;
       await ensureFirebaseLibs();
-      const btn = document.getElementById("shareCodeBtn");
-      if (btn) {
-        btn.onclick = () => {
-          void promptAndSetShareCode();
-        };
-      }
-      sharedCurrentCode = normalizeShareCode(getStoredShareCode());
-      updateShareCodeButton();
-      if (!sharedCurrentCode) {
-        const ok = await promptAndSetShareCode();
-        if (!ok) return;
-      }
       firebase.initializeApp(FIREBASE_CONFIG);
       await firebase.auth().signInAnonymously();
       sharedSyncReady = true;
-      await connectSharedDocument();
       document.addEventListener("input", () => {
         scheduleSharedPush();
       }, true);
       document.addEventListener("change", () => {
         scheduleSharedPush();
       }, true);
+    }
+
+    /**
+     * 共有同期は「共有コード」操作時に開始する（初回表示を速くするため）。
+     * 既に share code が保存されている端末だけ、アイドル時に同期を開始する。
+     */
+    async function initSharedSync() {
+      const btn = document.getElementById("shareCodeBtn");
+      sharedCurrentCode = normalizeShareCode(getStoredShareCode());
+      updateShareCodeButton();
+
+      if (btn) {
+        btn.onclick = () => {
+          void (async () => {
+            const ok = await promptAndSetShareCode();
+            if (!ok) return;
+            await startSharedSyncIfNeeded();
+            await connectSharedDocument();
+          })();
+        };
+      }
+
+      if (!sharedCurrentCode) return;
+      await startSharedSyncIfNeeded();
+      await connectSharedDocument();
     }
 
     setTodayToDateInputs();
@@ -5534,16 +5547,16 @@
     initPaperFitScaleWatching();
     initAutoUpdateCheck();
     applyIosSafariViewportFit();
-    /* 初回表示を優先して、共有同期は少し遅らせて開始 */
+    /* 初回表示を優先して、共有同期はアイドル時に開始（保存済みコードがある端末のみ） */
     const startShared = () => {
       void initSharedSync().catch((err) => {
         console.warn("共有同期の初期化に失敗しました", err);
       });
     };
     if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(startShared, { timeout: 2500 });
+      window.requestIdleCallback(startShared, { timeout: 3500 });
     } else {
-      setTimeout(startShared, 1500);
+      setTimeout(startShared, 2500);
     }
   </script>
 </body>
