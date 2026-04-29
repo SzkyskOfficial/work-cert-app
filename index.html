@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="shared-sync-apply-v1">
+<html lang="ja" data-rev="toolbar-mobile-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -72,6 +72,20 @@
       outline: 2px solid #3b7dd1;
       outline-offset: 2px;
       box-shadow: 0 0 0 1px rgba(59, 125, 209, 0.35);
+    }
+    /* URL スマホ：ツールバーだけ少し大きく（用紙レイアウトはそのまま） */
+    @media ((max-width: 900px) and (hover: none)), (pointer: coarse) {
+      .toolbar {
+        gap: 10px;
+        margin-bottom: 12px;
+        align-items: center;
+      }
+      .toolbar button {
+        padding: 11px 14px;
+        font-size: 17px;
+        line-height: 1.2;
+        border-radius: 8px;
+      }
     }
     button, input, select, textarea {
       font-family: inherit;
