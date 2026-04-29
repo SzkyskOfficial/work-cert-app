@@ -5462,10 +5462,6 @@
       sharedLocalSaveTimer = window.setTimeout(() => {
         sharedLocalSaveTimer = 0;
         if (!sharedCurrentCode) return;
-        if (isSharedUiBusy()) {
-          scheduleLocalSharedSnapshotSave();
-          return;
-        }
         runWhenIdle(() => {
           try {
             showSharedSyncToast("データ保存中", "warn", 900);
@@ -5473,8 +5469,8 @@
             saveSharedSnapshotToLocal(sharedCurrentCode, payload);
             showSharedSyncToast("データ保存完了", "success", 1200);
           } catch (_) {}
-        }, 2500);
-      }, 1200);
+        }, 4000);
+      }, 2500);
     }
     function scheduleApplySharedSnapshot(payload) {
       sharedPendingRemotePayload = payload;
@@ -5536,8 +5532,10 @@
       return true;
     }
     function captureAppSnapshot() {
+      const listsCopy =
+        typeof structuredClone === "function" ? structuredClone(lists) : JSON.parse(JSON.stringify(lists));
       return {
-        lists: JSON.parse(JSON.stringify(lists)),
+        lists: listsCopy,
         state: {
           workerCount: state.workerCount,
           taskCount: state.taskCount,
@@ -5573,7 +5571,9 @@
         remarks: [...document.querySelectorAll("#remarkRows textarea")].map((t) => t.value || ""),
       };
     }
-    function applySharedLists(nextLists) {
+    function applySharedLists(nextLists, opts) {
+      const opt = opts && typeof opts === "object" ? opts : {};
+      const persistQuiet = Boolean(opt.persistQuiet);
       const src = nextLists && typeof nextLists === "object" ? nextLists : {};
       lists.companies = Array.isArray(src.companies) ? src.companies : [];
       lists.sites = Array.isArray(src.sites) ? src.sites : [];
@@ -5591,7 +5591,13 @@
       lists.workDetails = sortJapaneseStrings(dedupeStringList(lists.workDetails), { modalScriptOrder: true });
       migrateWorkersList();
       persistWorkersSorted();
-      saveLists();
+      if (persistQuiet) {
+        try {
+          localStorage.setItem(LISTS_KEY, JSON.stringify(lists));
+        } catch (_) {}
+      } else {
+        saveLists();
+      }
       if (listsModal?.classList.contains("active")) renderListsModalBody();
       if (fieldSheet?.classList.contains("active") && sheetTarget?.dataset?.listKey) {
         const currentTarget = sheetTarget;
@@ -5604,7 +5610,7 @@
       sharedSyncPaused = true;
       try {
         saveSharedSnapshotToLocal(sharedCurrentCode, payload);
-        applySharedLists(payload.lists);
+        applySharedLists(payload.lists, { persistQuiet: true });
         const nextState = payload.state || {};
         state.workerCount = Number(nextState.workerCount) || DEFAULT_GRID_ROWS.workerCount;
         state.taskCount = Number(nextState.taskCount) || DEFAULT_GRID_ROWS.taskCount;
