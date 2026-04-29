@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="toolbar-mobile-v1">
+<html lang="ja" data-rev="shared-push-queue-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -5384,6 +5384,9 @@
     let sharedConnectTimer = 0;
     let sharedConnectAttempts = 0;
     let sharedApplyInflight = false;
+    let sharedPushWanted = false;
+    let sharedFlushTimer = 0;
+    let sharedSyncListenersBound = false;
     let sharedToastHideTimer = 0;
     let sharedLastToastMessage = "";
     let sharedInitialRemoteLoaded = false;
@@ -5742,8 +5745,26 @@
         }
       })();
     }
+    function scheduleSharedFlush() {
+      if (sharedFlushTimer) clearTimeout(sharedFlushTimer);
+      sharedFlushTimer = window.setTimeout(() => {
+        sharedFlushTimer = 0;
+        if (!sharedPushWanted) return;
+        if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef) {
+          scheduleSharedFlush();
+          return;
+        }
+        sharedPushWanted = false;
+        scheduleSharedPush();
+      }, 250);
+    }
+
     function scheduleSharedPush() {
-      if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef) return;
+      if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef) {
+        sharedPushWanted = true;
+        scheduleSharedFlush();
+        return;
+      }
       if (sharedSyncTimer) clearTimeout(sharedSyncTimer);
       sharedSyncTimer = window.setTimeout(() => {
         sharedSyncTimer = 0;
@@ -5857,6 +5878,7 @@
         showSharedSyncToast("データ読み込み失敗", "error", 1600);
       });
       scheduleSharedPush();
+      if (sharedPushWanted) scheduleSharedFlush();
     }
     async function startSharedSyncIfNeeded() {
       if (sharedSyncReady) return;
@@ -5866,17 +5888,21 @@
       if (!firebase.apps?.length) firebase.initializeApp(FIREBASE_CONFIG);
       await firebase.auth().signInAnonymously();
       sharedSyncReady = true;
-      document.addEventListener("input", () => {
-        scheduleLocalSharedSnapshotSave();
-        scheduleSharedPush();
-      }, true);
-      document.addEventListener("change", () => {
-        scheduleLocalSharedSnapshotSave();
-        scheduleSharedPush();
-      }, true);
-      document.addEventListener("pointerdown", markSharedUserInteraction, true);
-      document.addEventListener("touchstart", markSharedUserInteraction, true);
-      document.addEventListener("focusin", markSharedUserInteraction, true);
+      if (!sharedSyncListenersBound) {
+        sharedSyncListenersBound = true;
+        document.addEventListener("input", () => {
+          scheduleLocalSharedSnapshotSave();
+          scheduleSharedPush();
+        }, true);
+        document.addEventListener("change", () => {
+          scheduleLocalSharedSnapshotSave();
+          scheduleSharedPush();
+        }, true);
+        document.addEventListener("pointerdown", markSharedUserInteraction, true);
+        document.addEventListener("touchstart", markSharedUserInteraction, true);
+        document.addEventListener("focusin", markSharedUserInteraction, true);
+      }
+      if (sharedPushWanted) scheduleSharedFlush();
     }
 
     /**
@@ -5913,9 +5939,6 @@
           } catch (_) {}
         }, 1500);
       }
-      /* 端末内へは常に保存（Firestore未接続でも、次回即表示できるように） */
-      document.addEventListener("input", scheduleLocalSharedSnapshotSave, true);
-      document.addEventListener("change", scheduleLocalSharedSnapshotSave, true);
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) scheduleLocalSharedSnapshotSave();
         else if (sharedCurrentCode && (!sharedSyncReady || !sharedDocRef)) {
