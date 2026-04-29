@@ -3001,6 +3001,24 @@
       ]);
     }
 
+    function isCoarsePointerDevice() {
+      try {
+        return window.matchMedia("(pointer: coarse)").matches;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function isMobileUserAgent() {
+      const ua = String(navigator.userAgent || "");
+      return /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    }
+
+    /** viewport=1180 のため幅メディアクエリだけではスマホ判定が外れる。タッチ端末も含める */
+    function isPhoneLikeScreen() {
+      return window.matchMedia("(max-width: 900px)").matches || isCoarsePointerDevice() || isMobileUserAgent();
+    }
+
     const wLeft = document.getElementById("wLeft");
     const wRight = document.getElementById("wRight");
     const taskRows = document.getElementById("taskRows");
@@ -5471,9 +5489,6 @@
         flushPendingSharedSnapshot();
       }, waitMs);
     }
-    function isPhoneLikeScreen() {
-      return window.matchMedia("(max-width: 900px)").matches;
-    }
     function scheduleSharedConnect(delayMs = 0) {
       if (!sharedCurrentCode) return;
       if (sharedSyncReady && sharedDocRef) return;
@@ -5693,6 +5708,38 @@
       showSharedSyncToast("共有データ受信中", "warn", 1200);
       const db = firebase.firestore();
       sharedDocRef = db.collection("sharedDocs").doc(sharedCurrentCode);
+      try {
+        const initialSnap = await sharedDocRef.get();
+        const initialData = initialSnap.exists ? initialSnap.data() : null;
+        const initialPayload = initialData?.payload;
+        if (initialPayload) {
+          runWhenIdle(() => {
+            try {
+              const json = JSON.stringify(initialPayload);
+              if (json === sharedLastAppliedJson) return;
+              if (json === sharedLastPushedJson) {
+                sharedLastAppliedJson = json;
+                if (!sharedInitialRemoteLoaded) {
+                  sharedInitialRemoteLoaded = true;
+                  showSharedSyncToast("データ読み込み完了", "success", 1200);
+                }
+                return;
+              }
+              sharedLastAppliedJson = json;
+              scheduleApplySharedSnapshot(initialPayload);
+              if (!sharedInitialRemoteLoaded) {
+                sharedInitialRemoteLoaded = true;
+                showSharedSyncToast("データ読み込み完了", "success", 1200);
+              }
+            } catch (_) {}
+          }, 2000);
+        } else {
+          scheduleSharedPush();
+        }
+      } catch (err) {
+        console.warn("共有の初回取得に失敗しました", err);
+        showSharedSyncToast("データ読み込み失敗", "error", 1600);
+      }
       sharedUnsub = sharedDocRef.onSnapshot((snap) => {
         if (snap.metadata?.hasPendingWrites) return;
         const data = snap.data();
@@ -5701,22 +5748,26 @@
           scheduleSharedPush();
           return;
         }
-        const json = JSON.stringify(payload);
-        if (json === sharedLastAppliedJson) return;
-        if (json === sharedLastPushedJson) {
-          sharedLastAppliedJson = json;
-          if (!sharedInitialRemoteLoaded) {
-            sharedInitialRemoteLoaded = true;
-            showSharedSyncToast("データ読み込み完了", "success", 1200);
-          }
-          return;
-        }
-        sharedLastAppliedJson = json;
-        scheduleApplySharedSnapshot(payload);
-        if (!sharedInitialRemoteLoaded) {
-          sharedInitialRemoteLoaded = true;
-          showSharedSyncToast("データ読み込み完了", "success", 1200);
-        }
+        runWhenIdle(() => {
+          try {
+            const json = JSON.stringify(payload);
+            if (json === sharedLastAppliedJson) return;
+            if (json === sharedLastPushedJson) {
+              sharedLastAppliedJson = json;
+              if (!sharedInitialRemoteLoaded) {
+                sharedInitialRemoteLoaded = true;
+                showSharedSyncToast("データ読み込み完了", "success", 1200);
+              }
+              return;
+            }
+            sharedLastAppliedJson = json;
+            scheduleApplySharedSnapshot(payload);
+            if (!sharedInitialRemoteLoaded) {
+              sharedInitialRemoteLoaded = true;
+              showSharedSyncToast("データ読み込み完了", "success", 1200);
+            }
+          } catch (_) {}
+        }, 2000);
       }, (err) => {
         console.warn("共有受信に失敗しました", err);
         showSharedSyncToast("データ読み込み失敗", "error", 1600);
@@ -5728,7 +5779,7 @@
       showSharedSyncToast("共有に接続中", "warn", 1200);
       await ensureFirebaseLibs();
       await new Promise((r) => setTimeout(r, 0));
-      firebase.initializeApp(FIREBASE_CONFIG);
+      if (!firebase.apps?.length) firebase.initializeApp(FIREBASE_CONFIG);
       await firebase.auth().signInAnonymously();
       sharedSyncReady = true;
       document.addEventListener("input", () => {
