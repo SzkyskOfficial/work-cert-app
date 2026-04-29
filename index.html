@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="mobile-safe-sync-v1">
+<html lang="ja" data-rev="shared-lists-only-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -5795,21 +5795,20 @@
       if (sharedSyncPaused || !sharedSyncReady || !sharedDocRef || sharedPushInflight) return;
       showSharedSyncToast("データ保存中", "warn", 900);
       sharedPushInflight = true;
-      const payload = captureAppSnapshot();
-      const json = JSON.stringify(payload);
+      const listsPayload =
+        typeof structuredClone === "function" ? structuredClone(lists) : JSON.parse(JSON.stringify(lists));
+      const json = JSON.stringify(listsPayload);
       if (json === sharedLastPushedJson) {
         sharedPushInflight = false;
         showSharedSyncToast("データ保存完了", "success", 900);
         return;
       }
       sharedLastPushedJson = json;
-      saveSharedSnapshotToLocal(sharedCurrentCode, payload);
       try {
         await sharedDocRef.set(
           {
             code: sharedCurrentCode,
-            payload,
-            lists: payload.lists,
+            lists: listsPayload,
             listsUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           },
@@ -5833,34 +5832,6 @@
         const initialData = initialSnap.exists ? initialSnap.data() : null;
         if (initialData?.lists) {
           applyRemoteSharedListsOnly(initialData.lists, { silent: true });
-        }
-        const initialPayload = initialData?.payload;
-        if (initialPayload) {
-          runWhenIdle(() => {
-            try {
-              const json = JSON.stringify(initialPayload);
-              if (json === sharedLastAppliedJson) return;
-              if (json === sharedLastPushedJson) {
-                sharedLastAppliedJson = json;
-                if (!sharedInitialRemoteLoaded) {
-                  sharedInitialRemoteLoaded = true;
-                  showSharedSyncToast("データ読み込み完了", "success", 1200);
-                }
-                return;
-              }
-              sharedLastAppliedJson = json;
-              if (isPhoneLikeScreen()) {
-                saveSharedSnapshotToLocal(sharedCurrentCode, initialPayload);
-              } else {
-                scheduleApplySharedSnapshot(initialPayload);
-              }
-              if (!sharedInitialRemoteLoaded) {
-                sharedInitialRemoteLoaded = true;
-                showSharedSyncToast("データ読み込み完了", "success", 1200);
-              }
-            } catch (_) {}
-          }, 2000);
-        } else {
           scheduleSharedPush();
         }
       } catch (err) {
@@ -5876,43 +5847,11 @@
         const data = snap.data();
         if (data?.lists) {
           applyRemoteSharedListsOnly(data.lists, { silent: false });
+          if (!sharedInitialRemoteLoaded) {
+            sharedInitialRemoteLoaded = true;
+            showSharedSyncToast("データ読み込み完了", "success", 1200);
+          }
         }
-      });
-      sharedUnsub = sharedDocRef.onSnapshot((snap) => {
-        if (snap.metadata?.hasPendingWrites) return;
-        const data = snap.data();
-        const payload = data?.payload;
-        if (!payload) {
-          scheduleSharedPush();
-          return;
-        }
-        runWhenIdle(() => {
-          try {
-            const json = JSON.stringify(payload);
-            if (json === sharedLastAppliedJson) return;
-            if (json === sharedLastPushedJson) {
-              sharedLastAppliedJson = json;
-              if (!sharedInitialRemoteLoaded) {
-                sharedInitialRemoteLoaded = true;
-                showSharedSyncToast("データ読み込み完了", "success", 1200);
-              }
-              return;
-            }
-            sharedLastAppliedJson = json;
-            if (isPhoneLikeScreen()) {
-              saveSharedSnapshotToLocal(sharedCurrentCode, payload);
-            } else {
-              scheduleApplySharedSnapshot(payload);
-            }
-            if (!sharedInitialRemoteLoaded) {
-              sharedInitialRemoteLoaded = true;
-              showSharedSyncToast("データ読み込み完了", "success", 1200);
-            }
-          } catch (_) {}
-        }, 2000);
-      }, (err) => {
-        console.warn("共有受信に失敗しました", err);
-        showSharedSyncToast("データ読み込み失敗", "error", 1600);
       });
       scheduleSharedPush();
       if (sharedPushWanted) scheduleSharedFlush();
@@ -5979,11 +5918,7 @@
       if (localPayload) {
         runWhenIdle(() => {
           try {
-            if (isPhoneLikeScreen()) {
-              if (localPayload.lists) applyRemoteSharedListsOnly(localPayload.lists, { silent: true });
-            } else {
-              applySharedSnapshot(localPayload);
-            }
+            if (localPayload.lists) applyRemoteSharedListsOnly(localPayload.lists, { silent: true });
           } catch (_) {}
         }, 1500);
       }
