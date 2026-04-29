@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="shared-lists-only-v1">
+<html lang="ja" data-rev="shared-lists-fastconnect-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -5903,7 +5903,7 @@
           void (async () => {
             const ok = await promptAndSetShareCode();
             if (!ok) return;
-            if (isPhoneLikeScreen()) scheduleSharedConnect(8000);
+            if (isPhoneLikeScreen()) scheduleSharedConnect(800);
             else {
               await startSharedSyncIfNeeded();
               await connectSharedDocument();
@@ -5925,11 +5925,11 @@
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) scheduleLocalSharedSnapshotSave();
         else if (sharedCurrentCode && (!sharedSyncReady || !sharedDocRef)) {
-          scheduleSharedConnect(isPhoneLikeScreen() ? 4000 : 1000);
+          scheduleSharedConnect(isPhoneLikeScreen() ? 1000 : 1000);
         }
       });
       if (isPhoneLikeScreen()) {
-        scheduleSharedConnect(12000);
+        scheduleSharedConnect(1200);
         return;
       }
       await startSharedSyncIfNeeded();
