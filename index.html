@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="rebuild-layout-v3">
+<html lang="ja" data-rev="shared-sync-ui-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -31,9 +31,11 @@
     body { margin: 0; background: #eceff3; font-family: "Yu Gothic UI", "Meiryo", sans-serif; }
     .shared-sync-toast {
       position: fixed;
-      right: 14px;
+      left: 50%;
+      right: auto;
       top: 14px;
-      z-index: 400;
+      transform: translateX(-50%) translateY(-6px);
+      z-index: 5000;
       max-width: min(86vw, 320px);
       padding: 9px 12px;
       border-radius: 10px;
@@ -43,13 +45,12 @@
       background: rgba(25, 25, 28, 0.92);
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.26);
       opacity: 0;
-      transform: translateY(-6px);
       pointer-events: none;
       transition: opacity 0.2s ease, transform 0.2s ease;
     }
     .shared-sync-toast.show {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateX(-50%) translateY(0);
     }
     .shared-sync-toast.success {
       background: rgba(14, 120, 57, 0.95);
@@ -5366,13 +5367,24 @@
     let sharedUserActiveUntil = 0;
     let sharedLocalSaveTimer = 0;
     let sharedConnectTimer = 0;
+    let sharedConnectAttempts = 0;
     let sharedToastHideTimer = 0;
     let sharedLastToastMessage = "";
     let sharedInitialRemoteLoaded = false;
     const sharedSyncToastEl = document.getElementById("sharedSyncToast");
 
+    function ensureSharedSyncToastMounted() {
+      if (!sharedSyncToastEl) return;
+      if (sharedSyncToastEl.parentElement !== document.body) {
+        try {
+          document.body.appendChild(sharedSyncToastEl);
+        } catch (_) {}
+      }
+    }
+
     function showSharedSyncToast(message, kind = "", holdMs = 1300) {
       if (!sharedSyncToastEl || !message) return;
+      ensureSharedSyncToastMounted();
       const msg = String(message);
       const tone = String(kind || "");
       if (sharedToastHideTimer) {
@@ -5441,16 +5453,22 @@
     function markSharedUserInteraction() {
       sharedUserActiveUntil = Date.now() + 1800;
     }
-    function isSharedUiBusy() {
+    /** 共有の送受信を止めるべき「上に被さるUI」だけを見る（通常操作は止めない） */
+    function isSharedBlockingOverlayOpen() {
       return Boolean(
-        Date.now() < sharedUserActiveUntil ||
         fieldSheet?.classList.contains("active") ||
         listsModal?.classList.contains("active") ||
         sigModal?.classList.contains("active")
       );
     }
+    function isSharedUiBusy() {
+      return isSharedBlockingOverlayOpen();
+    }
     function flushPendingSharedSnapshot() {
-      if (!sharedPendingRemotePayload || isSharedUiBusy()) return;
+      if (!sharedPendingRemotePayload) return;
+      if (isSharedUiBusy()) return;
+      /* 入力直後は共有の全画面再構築を避ける（操作感を優先） */
+      if (Date.now() < sharedUserActiveUntil) return;
       const payload = sharedPendingRemotePayload;
       sharedPendingRemotePayload = null;
       applySharedSnapshot(payload);
@@ -5492,9 +5510,14 @@
       sharedConnectTimer = window.setTimeout(() => {
         sharedConnectTimer = 0;
         if (isSharedUiBusy()) {
-          scheduleSharedConnect(3000);
-          return;
+          sharedConnectAttempts += 1;
+          /* モーダルが開きっぱなしでも永遠に接続しない状態を避ける */
+          if (sharedConnectAttempts < 12) {
+            scheduleSharedConnect(3000);
+            return;
+          }
         }
+        sharedConnectAttempts = 0;
         runWhenIdle(() => {
           void (async () => {
             try {
@@ -5520,6 +5543,7 @@
       sharedCurrentCode = code;
       setStoredShareCode(code);
       updateShareCodeButton();
+      sharedConnectAttempts = 0;
       if (sharedUnsub) {
         sharedUnsub();
         sharedUnsub = null;
@@ -5809,6 +5833,7 @@
       const btn = document.getElementById("shareCodeBtn");
       sharedCurrentCode = normalizeShareCode(getStoredShareCode());
       updateShareCodeButton();
+      sharedConnectAttempts = 0;
 
       if (btn) {
         btn.onclick = () => {
