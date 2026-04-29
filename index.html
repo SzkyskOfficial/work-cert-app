@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="shared-ui-stability-v1">
+<html lang="ja" data-rev="toolbar-chip-right-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -105,10 +105,26 @@
         align-items: center;
       }
       .toolbar button {
-        padding: 11px 14px;
-        font-size: 17px;
+        padding: 13px 16px;
+        font-size: 18px;
         line-height: 1.2;
-        border-radius: 8px;
+        border-radius: 10px;
+      }
+      .toolbar .shared-sync-chip {
+        position: static;
+        transform: none;
+        left: auto;
+        bottom: auto;
+        z-index: auto;
+        width: auto;
+        max-width: min(46vw, 320px);
+        margin-left: auto;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
     }
     button, input, select, textarea {
@@ -5428,10 +5444,28 @@
         } catch (_) {}
       }
     }
+    function ensureSharedSyncChipMounted() {
+      if (!sharedSyncChipEl) return;
+      const toolbar = document.querySelector(".toolbar");
+      if (isPhoneLikeScreen() && toolbar) {
+        if (sharedSyncChipEl.parentElement !== toolbar) {
+          try {
+            toolbar.appendChild(sharedSyncChipEl);
+          } catch (_) {}
+        }
+        return;
+      }
+      if (sharedSyncChipEl.parentElement !== document.body) {
+        try {
+          document.body.appendChild(sharedSyncChipEl);
+        } catch (_) {}
+      }
+    }
 
     function showSharedSyncToast(message, kind = "", holdMs = 1300) {
       if (!sharedSyncToastEl || !message) return;
       ensureSharedSyncToastMounted();
+      ensureSharedSyncChipMounted();
       const msg = String(message);
       const tone = String(kind || "");
       if (sharedSyncChipEl) {
