@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-rev="shared-lists-split-v1">
+<html lang="ja" data-rev="shared-auth-diag-v1">
 <head>
   <meta charset="UTF-8" />
   <meta id="viewportMeta" name="viewport" content="width=1180, viewport-fit=cover" />
@@ -5912,10 +5912,17 @@
     async function startSharedSyncIfNeeded() {
       if (sharedSyncReady) return;
       showSharedSyncToast("共有に接続中", "warn", 1200);
-      await ensureFirebaseLibs();
-      await new Promise((r) => setTimeout(r, 0));
-      if (!firebase.apps?.length) firebase.initializeApp(FIREBASE_CONFIG);
-      await firebase.auth().signInAnonymously();
+      try {
+        await ensureFirebaseLibs();
+        await new Promise((r) => setTimeout(r, 0));
+        if (!firebase.apps?.length) firebase.initializeApp(FIREBASE_CONFIG);
+        await firebase.auth().signInAnonymously();
+      } catch (err) {
+        console.warn("共有ログイン（匿名）に失敗しました", err);
+        showSharedSyncToast("共有ログイン失敗（Anonymous/設定確認）", "error", 2600);
+        sharedSyncReady = false;
+        return;
+      }
       sharedSyncReady = true;
       if (!sharedSyncListenersBound) {
         sharedSyncListenersBound = true;
