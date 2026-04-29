@@ -81,6 +81,11 @@
     .shared-sync-chip.success { background: rgba(14, 120, 57, 0.95); }
     .shared-sync-chip.warn { background: rgba(163, 91, 15, 0.95); }
     .shared-sync-chip.error { background: rgba(170, 34, 34, 0.95); }
+    @media ((min-width: 901px) and (pointer: fine)) {
+      .shared-sync-chip {
+        display: none !important;
+      }
+    }
     .app { max-width: 1180px; margin: 0 auto; padding: 16px; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
     .toolbar button[data-lists-tab]:focus-visible {
